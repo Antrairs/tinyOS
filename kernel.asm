@@ -15,10 +15,14 @@ start:
     mov si, message
     call print
 
+input_loop:
     mov ah, 0
     int 0x16
+    cmp al, 13
+    je halt
     mov ah, 0x0e
     int 0x10
+    jmp input_loop
 
 halt:
     hlt
