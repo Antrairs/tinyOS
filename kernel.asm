@@ -9,10 +9,30 @@ start:
     mov sp, 0x7c00
     mov ds, ax
     mov es, ax
+    mov [boot_drive], dl
     cld
     sti
 
     mov si, message
+    call print
+    
+    mov ax, 0
+    mov es, ax
+    mov bx, 0x9000
+
+    mov ch, 0
+    mov dh, 0
+    mov cl, 1
+    mov dl, [boot_drive]
+    call read_sector
+    jc read_failed
+
+    cmp byte [0x91fe], 0x55
+    jne bad_signature_error
+    cmp byte [0x91ff], 0xaa
+    jne bad_signature_error
+
+    mov si, read_ok_message
     call print
 
 command_loop:
@@ -82,6 +102,22 @@ finish_input:
 
     jmp help_command
 
+bad_signature_error:
+    mov si, bad_signature
+    call print
+    jmp command_loop
+
+read_failed:
+    mov si, read_error_message
+    call print
+    jmp command_loop
+
+read_sector:
+    mov ah, 0x02
+    mov al, 1
+    int 0x13
+    ret
+
 print:
     lodsb
     test al, al
@@ -99,6 +135,18 @@ prompt:
 
 message:
     db "Hello OS!", 13, 10, 0
+
+boot_drive:
+    db 0
+
+read_ok_message:
+    db "sector read OK", 13, 10, 0
+
+read_error_message:
+    db "sector read FAILED", 13, 10, 0
+
+bad_signature:
+    db "bad signature!", 13, 10, 0
 
 input_buffer:
     times 16 db 0
