@@ -65,6 +65,9 @@ finish_input:
 
     mov byte [di], 0
 
+    cmp byte [input_buffer], 0
+    je command_loop
+
     ; 检查 help 命令
     cmp byte [input_buffer], 'h'
     jne unknown_command
