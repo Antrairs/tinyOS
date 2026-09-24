@@ -14,6 +14,10 @@ start:
 
     mov si, message
     call print
+
+command_loop:
+    mov si, prompt
+    call print
     mov di, input_buffer
 
 input_loop:
@@ -53,10 +57,6 @@ finish_input:
 
     jmp help_command
 
-    mov si, input_buffer
-    call print
-    jmp halt
-
 print:
     lodsb
     test al, al
@@ -69,6 +69,9 @@ print:
 .done:
     ret
 
+prompt:
+    db "tinyOS> ", 0
+
 message:
     db "Hello OS!", 13, 10, 0
 
@@ -76,20 +79,20 @@ input_buffer:
     times 16 db 0
 
 unknown_message:
-    db "unknown command!", 0
+    db "unknown command!", 13, 10, 0
 
 unknown_command:
     mov si, unknown_message
     call print
-    jmp halt
+    jmp command_loop
 
 help_message:
-    db "help: ", 0
+    db "help: ", 13, 10, 0
 
 help_command:
     mov si, help_message
     call print
-    jmp halt
+    jmp command_loop
 
 halt:
     hlt
