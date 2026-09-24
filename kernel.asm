@@ -30,13 +30,31 @@ input_loop:
     jmp input_loop
 
 finish_input:
+    ; 回车换行
+    mov ah, 0x0e
+    mov al, 13 ; CR 回到当前行行首
+    int 0x10
+    mov al, 10 ; LF 下移一行
+    int 0x10
+
     mov byte [di], 0
+
+    ; 检查 help 命令
+    cmp byte [input_buffer], 'h'
+    jne unknown_command
+    cmp byte [input_buffer + 1], 'e'
+    jne unknown_command
+    cmp byte [input_buffer + 2], 'l'
+    jne unknown_command
+    cmp byte [input_buffer + 3], 'p'
+    jne unknown_command
+    cmp byte [input_buffer + 4], 0
+    jne unknown_command
+
+    jmp help_command
+
     mov si, input_buffer
     call print
-    jmp halt
-
-halt:
-    hlt
     jmp halt
 
 print:
@@ -47,6 +65,7 @@ print:
     mov bx, 0x0007         ; page 0, light gray
     int 0x10
     jmp print
+
 .done:
     ret
 
@@ -55,5 +74,25 @@ message:
 
 input_buffer:
     times 16 db 0
+
+unknown_message:
+    db "unknown command!", 0
+
+unknown_command:
+    mov si, unknown_message
+    call print
+    jmp halt
+
+help_message:
+    db "help: ", 0
+
+help_command:
+    mov si, help_message
+    call print
+    jmp halt
+
+halt:
+    hlt
+    jmp halt
 
 times 1024 - ($ - $$) db 0
