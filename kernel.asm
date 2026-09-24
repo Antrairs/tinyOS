@@ -23,6 +23,10 @@ command_loop:
 input_loop:
     mov ah, 0
     int 0x16
+    ; 处理退格键
+    cmp al, 8
+    je backspace
+    ; 处理回车键
     cmp al, 13
     je finish_input
     cmp di, input_buffer + 15
@@ -30,6 +34,24 @@ input_loop:
     mov [di], al      ; 保存当前字符
     inc di            ; 指向下一个空位置
     mov ah, 0x0e
+    int 0x10
+    jmp input_loop
+
+backspace:
+    ; 已在缓冲区开头, 忽略退格
+    cmp di, input_buffer
+    je input_loop
+
+    dec di
+    mov byte [di], 0
+
+    ; 光标左移, 擦掉字符, 左移回空位
+    mov ah, 0x0e
+    mov al, 8
+    int 0x10
+    mov al, ' '
+    int 0x10
+    mov al, 8
     int 0x10
     jmp input_loop
 
