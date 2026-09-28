@@ -35,6 +35,19 @@ start:
     mov si, read_ok_message
     call print
 
+    mov ax, 0
+    mov es, ax
+    mov bx, 0x9000
+    mov ch, 0
+    mov dh, 0
+    mov cl, 4
+    mov dl, [boot_drive]
+    call write_sector
+    jc write_failed
+
+    mov si, write_ok_message
+    call print
+
 command_loop:
     mov si, prompt
     call print
@@ -107,16 +120,27 @@ bad_signature_error:
     call print
     jmp command_loop
 
-read_failed:
-    mov si, read_error_message
-    call print
-    jmp command_loop
-
 read_sector:
     mov ah, 0x02
     mov al, 1
     int 0x13
     ret
+
+read_failed:
+    mov si, read_error_message
+    call print
+    jmp command_loop
+
+write_sector:
+    mov ah, 0x03
+    mov al, 1
+    int 0x13
+    ret
+
+write_failed:
+    mov si, write_error_message
+    call print
+    jmp command_loop
 
 print:
     lodsb
@@ -144,6 +168,12 @@ read_ok_message:
 
 read_error_message:
     db "sector read FAILED", 13, 10, 0
+
+write_ok_message:
+    db "sector write OK", 13, 10, 0
+
+write_error_message:
+    db "sector write FAILED", 13, 10, 0
 
 bad_signature:
     db "bad signature!", 13, 10, 0
