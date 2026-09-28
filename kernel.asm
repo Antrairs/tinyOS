@@ -2,6 +2,7 @@ bits 16
 org 0x8000
 
 KERNEL_SECTORS equ 17
+INPUT_BUFFER_SIZE equ 80
 
 start:
     ; 引导程序在实模式下跳到 0000:8000
@@ -50,7 +51,7 @@ input_loop:
     ; 处理回车键
     cmp al, 13
     je finish_input
-    cmp di, input_buffer + 15
+    cmp di, input_buffer + INPUT_BUFFER_SIZE - 1
     jae input_loop    ; DI 已到最后一个字节：不保存，也不显示
     mov [di], al      ; 保存当前字符
     inc di            ; 指向下一个空位置
@@ -172,7 +173,7 @@ bad_signature:
     db "bad signature!", 13, 10, 0
 
 input_buffer:
-    times 16 db 0
+    times INPUT_BUFFER_SIZE db 0
 
 unknown_message:
     db "unknown command!", 13, 10, 0
