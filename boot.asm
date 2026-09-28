@@ -1,6 +1,8 @@
 bits 16
 org 0x7c00
 
+KERNEL_SECTORS equ 17
+
 start:
     xor ax, ax
     mov ds, ax
@@ -18,7 +20,7 @@ start:
     ; 从软盘读取下一个扇区
 
     mov ah, 0x02        ; BIOS: read sectors
-    mov al, 2           ; 读取 2 个 sector
+    mov al, KERNEL_SECTORS ; 读取 KERNEL_SECTORS(17) 个 sector
 
     mov ch, 0           ; cylinder 0
     mov dh, 0           ; head 0

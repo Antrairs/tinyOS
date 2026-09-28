@@ -1,6 +1,8 @@
 bits 16
 org 0x8000
 
+KERNEL_SECTORS equ 17
+
 start:
     ; 引导程序在实模式下跳到 0000:8000
     cli
@@ -23,7 +25,6 @@ start:
     mov ch, 0
     mov dh, 0
     mov cl, 1
-    mov dl, [boot_drive]
     call read_sector
     jc read_failed
 
@@ -33,19 +34,6 @@ start:
     jne bad_signature_error
 
     mov si, read_ok_message
-    call print
-
-    mov ax, 0
-    mov es, ax
-    mov bx, 0x9000
-    mov ch, 0
-    mov dh, 0
-    mov cl, 4
-    mov dl, [boot_drive]
-    call write_sector
-    jc write_failed
-
-    mov si, write_ok_message
     call print
 
 command_loop:
@@ -121,6 +109,7 @@ bad_signature_error:
     jmp command_loop
 
 read_sector:
+    mov dl, [data_drive]
     mov ah, 0x02
     mov al, 1
     int 0x13
@@ -132,6 +121,7 @@ read_failed:
     jmp command_loop
 
 write_sector:
+    mov dl, [data_drive]
     mov ah, 0x03
     mov al, 1
     int 0x13
@@ -162,6 +152,9 @@ message:
 
 boot_drive:
     db 0
+
+data_drive:
+    db 1
 
 read_ok_message:
     db "sector read OK", 13, 10, 0
@@ -201,4 +194,4 @@ halt:
     hlt
     jmp halt
 
-times 1024 - ($ - $$) db 0
+times (KERNEL_SECTORS * 512) - ($ - $$) db 0
