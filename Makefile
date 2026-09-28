@@ -1,5 +1,6 @@
 ASM := nasm
 QEMU := qemu-system-i386
+PYTHON := python3
 
 BOOT_SRC := boot.asm
 KERNEL_SRC := kernel.asm
@@ -8,13 +9,19 @@ BUILD_DIR := build
 BOOT_BIN := $(BUILD_DIR)/boot.bin
 KERNEL_BIN := $(BUILD_DIR)/kernel.bin
 IMAGE := $(BUILD_DIR)/floppy.img
+DATA_IMAGE := $(BUILD_DIR)/data.img
 
 .PHONY: build run clean
 
 run: build
-	$(QEMU) -drive file=$(IMAGE),format=raw,if=floppy
+	$(QEMU) -drive file=build/floppy.img,format=raw,if=floppy,index=0 -drive file=build/data.img,format=raw,if=floppy,index=1
 
 build: $(IMAGE)
+	@if [ ! -f "$(DATA_IMAGE)" ]; then \
+		$(PYTHON) tools/mkfat12.py "$(DATA_IMAGE)"; \
+	else \
+		echo "Using existing $(DATA_IMAGE)"; \
+	fi
 
 $(BOOT_BIN): $(BOOT_SRC)
 	mkdir -p $(BUILD_DIR)
