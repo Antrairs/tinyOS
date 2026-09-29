@@ -89,20 +89,45 @@ finish_input:
 
     cmp byte [input_buffer], 0
     je command_loop
+    mov si, command_table
 
-    ; 检查 help 命令
-    cmp byte [input_buffer], 'h'
-    jne unknown_command
-    cmp byte [input_buffer + 1], 'e'
-    jne unknown_command
-    cmp byte [input_buffer + 2], 'l'
-    jne unknown_command
-    cmp byte [input_buffer + 3], 'p'
-    jne unknown_command
-    cmp byte [input_buffer + 4], 0
-    jne unknown_command
+.dispatch_next:   ; 检查命令
+    lodsw         ; 从 [ds:si] 读取 16 位数到 ax, 并让 si 前进两个字节
+    test ax, ax   ; 检查 ax 是否为 0
+    jz unknown_command
+    
+    mov di, ax    ; di存表中的命令名
+    lodsw
+    mov bx, ax    ; bx存对应的处理函数
 
-    jmp help_command
+    push si
+    mov si, input_buffer
+    call strcmp   ; 字符串比较函数
+    pop si
+
+    test al, al
+    jnz .dispatch_found
+    jmp .dispatch_next
+
+.dispatch_found:
+    jmp bx
+
+strcmp:
+.next:
+    mov al, [si]
+    cmp al, [di]
+    jne .neq
+    test al, al
+    jz .eq
+    inc si
+    inc di
+    jmp .next
+.eq:
+    mov al, 1
+    ret
+.neq:
+    xor al, al
+    ret
 
 bad_signature_error:
     mov si, bad_signature
@@ -157,6 +182,21 @@ boot_drive:
 data_drive:
     db 1
 
+command_table:
+    dw sym_help, help_command
+    dw 0, 0
+
+sym_help:
+    db "help", 0
+
+help_command:
+    mov si, .help_message
+    call print
+    jmp command_loop
+
+.help_message:
+    db "help: ", 13, 10, 0
+
 read_ok_message:
     db "sector read OK", 13, 10, 0
 
@@ -180,14 +220,6 @@ unknown_message:
 
 unknown_command:
     mov si, unknown_message
-    call print
-    jmp command_loop
-
-help_message:
-    db "help: ", 13, 10, 0
-
-help_command:
-    mov si, help_message
     call print
     jmp command_loop
 
