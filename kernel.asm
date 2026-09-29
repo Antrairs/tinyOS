@@ -146,10 +146,10 @@ split_command:
     inc si
 .skip_spaces:
     cmp byte [si], ' '
-    jne .save_arument
+    jne .save_arg
     inc si
     jmp .skip_spaces
-.save_arument:
+.save_arg:
     cmp byte [si], 0
     je .done
     mov [arg_ptr], si
@@ -211,6 +211,7 @@ data_drive:
 
 command_table:
     dw sym_help, help_command
+    dw sym_create, create_command
     dw 0, 0
 
 arg_ptr:
@@ -218,6 +219,9 @@ arg_ptr:
 
 sym_help:
     db "help", 0
+
+sym_create:
+    db "create", 0
 
 help_command:
     cmp word [arg_ptr], 0
@@ -229,6 +233,28 @@ help_command:
     jmp command_loop
 .help_message:
     db "help: ", 13, 10, 0
+
+create_command:
+    cmp word [arg_ptr], 0
+    je .usage
+
+    mov si, .create_arg_message
+    call print
+    mov si, [arg_ptr]
+    call print
+    mov si, .newline
+    call print
+    jmp command_loop
+.usage:
+    mov si, .create_usage_message
+    call print
+    jmp command_loop
+.create_arg_message:
+    db "argument: ", 0
+.create_usage_message:
+    db "usage: create NAME.EXT", 13, 10, 0
+.newline:
+    db 13, 10, 0
 
 read_ok_message:
     db "sector read OK", 13, 10, 0
