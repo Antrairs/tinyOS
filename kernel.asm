@@ -89,6 +89,9 @@ finish_input:
 
     cmp byte [input_buffer], 0
     je command_loop
+
+    mov si, input_buffer
+    call split_command
     mov si, command_table
 
 .dispatch_next:   ; 检查命令
@@ -129,6 +132,31 @@ strcmp:
     xor al, al
     ret
 
+split_command:
+    mov word [arg_ptr], 0
+.find_space:
+    cmp byte [si], 0
+    je .done
+    cmp byte [si], ' '
+    je .found_space
+    inc si
+    jmp .find_space
+.found_space:
+    mov byte [si], 0
+    inc si
+.skip_spaces:
+    cmp byte [si], ' '
+    jne .save_arument
+    inc si
+    jmp .skip_spaces
+.save_arument:
+    cmp byte [si], 0
+    je .done
+    mov [arg_ptr], si
+.done:
+    ret
+
+
 bad_signature_error:
     mov si, bad_signature
     call print
@@ -166,7 +194,6 @@ print:
     mov bx, 0x0007         ; page 0, light gray
     int 0x10
     jmp print
-
 .done:
     ret
 
@@ -186,14 +213,20 @@ command_table:
     dw sym_help, help_command
     dw 0, 0
 
+arg_ptr:
+    dw 0
+
 sym_help:
     db "help", 0
 
 help_command:
+    cmp word [arg_ptr], 0
+    je .show_help
+    jmp unknown_command
+.show_help:
     mov si, .help_message
     call print
     jmp command_loop
-
 .help_message:
     db "help: ", 13, 10, 0
 
