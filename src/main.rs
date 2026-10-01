@@ -5,6 +5,9 @@ use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
+mod fat12;
+use fat12::Fat12;
+
 global_asm!(
     r#"
     .section .text.entry
@@ -22,6 +25,7 @@ _start:
 );
 
 const UART0: usize = 0x1000_0000;
+static IMAGE: &[u8] = include_bytes!("../build/fat12.img");
 
 fn putchar(c: u8) {
     const LSR: usize = 5;
@@ -36,9 +40,6 @@ fn putchar(c: u8) {
 
 fn puts(s: &str) {
     for c in s.bytes() {
-        if c == b'\n' {
-            putchar(b'\r');
-        }
         putchar(c);
     }
 }
@@ -47,6 +48,19 @@ fn puts(s: &str) {
 pub extern "C" fn kernel_main() -> ! {
     puts("\nHello tinyOS!\n");
 
+    let fs = Fat12::new(IMAGE);
+
+    fs.list_root_name(|name| {
+        for &c in name {
+            putchar(c);
+        }
+        putchar(b'\n');
+    });
+
+    halt();
+}
+
+fn halt() -> ! {
     loop {
         unsafe {
             asm!("wfi");
@@ -56,11 +70,6 @@ pub extern "C" fn kernel_main() -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    puts("\nKernel panic!\n");
-
-    loop {
-        unsafe {
-            asm!("wfi");
-        }
-    }
+    puts("\rKernel panic!\r");
+    halt();
 }
