@@ -3,7 +3,7 @@ fn le16(data: &[u8], pos: usize) -> usize {
 }
 
 pub struct Fat12<'a> {
-    image: &'a [u8],
+    image: &'a mut [u8],
 
     bytes_per_sector: usize,
     reserved_sectors: usize,
@@ -13,15 +13,20 @@ pub struct Fat12<'a> {
 }
 
 impl<'a> Fat12<'a> {
-    pub fn new(image: &'a [u8]) -> Self {
+    pub fn new(image: &'a mut [u8]) -> Self {
+        let bytes_per_sector = le16(image, 11);
+        let reserved_sectors = le16(image, 14);
+        let fat_count = image[16] as usize;
+        let root_entry_count = le16(image, 17);
+        let sectors_per_fat = le16(image, 22);
+
         Self {
             image,
-
-            bytes_per_sector: le16(image, 11),
-            reserved_sectors: le16(image, 14),
-            fat_count: image[16] as usize,
-            root_entry_count: le16(image, 17),
-            sectors_per_fat: le16(image, 22),
+            bytes_per_sector,
+            reserved_sectors,
+            fat_count,
+            root_entry_count,
+            sectors_per_fat,
         }
     }
 
@@ -53,5 +58,24 @@ impl<'a> Fat12<'a> {
 
             f(&entry[0..11]);
         }
+    }
+
+    pub fn create_file(&mut self, name: &[u8; 11]) -> bool {
+        let root = self.root_offset();
+
+        for i in 0..self.root_entry_count {
+            let offset = root + i * 32;
+            let first = self.image[offset];
+
+            if first != 0x00 && first != 0xE5 {
+                continue;
+            }
+
+            let entry = &mut self.image[offset..offset + 32];
+            entry.fill(0);
+            entry[0..11].copy_from_slice(name);
+            return true;
+        };
+        false
     }
 }

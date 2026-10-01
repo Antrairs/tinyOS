@@ -25,7 +25,8 @@ _start:
 );
 
 const UART0: usize = 0x1000_0000;
-static IMAGE: &[u8] = include_bytes!("../build/fat12.img");
+const IMAGE_SIZE: usize = include_bytes!("../build/fat12.img").len();
+static mut IMAGE: [u8; IMAGE_SIZE] = *include_bytes!("../build/fat12.img");
 
 fn putchar(c: u8) {
     const LSR: usize = 5;
@@ -48,7 +49,10 @@ fn puts(s: &str) {
 pub extern "C" fn kernel_main() -> ! {
     puts("\nHello tinyOS!\n");
 
-    let fs = Fat12::new(IMAGE);
+    let image = unsafe {
+        &mut *core::ptr::addr_of_mut!(IMAGE)
+    };
+    let mut fs = Fat12::new(image);
 
     fs.list_root_name(|name| {
         for &c in name {
@@ -56,6 +60,12 @@ pub extern "C" fn kernel_main() -> ! {
         }
         putchar(b'\n');
     });
+
+    if fs.create_file(b"EMPTY   TXT") {
+        puts("\nCreated EMPTY.TXT\n");
+    } else {
+        puts("\nCreate failed\n")
+    }
 
     halt();
 }
