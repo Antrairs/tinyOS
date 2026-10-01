@@ -49,9 +49,7 @@ fn puts(s: &str) {
 pub extern "C" fn kernel_main() -> ! {
     puts("\nHello tinyOS!\n");
 
-    let image = unsafe {
-        &mut *core::ptr::addr_of_mut!(IMAGE)
-    };
+    let image = unsafe { &mut *core::ptr::addr_of_mut!(IMAGE) };
     let mut fs = Fat12::new(image);
 
     fs.list_root_name(|name| {
@@ -65,6 +63,12 @@ pub extern "C" fn kernel_main() -> ! {
         puts("\nCreated EMPTY.TXT\n");
     } else {
         puts("\nCreate failed\n")
+    }
+
+    if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
+        puts("\nWrite to EMPTY.TXT successful\n");
+    } else {
+        puts("\nWrite to EMPTY.TXT failed\n");
     }
 
     halt();
