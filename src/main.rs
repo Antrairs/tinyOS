@@ -70,11 +70,11 @@ pub extern "C" fn kernel_main() -> ! {
         putchar(b'\n');
     });
 
-    // if fs.create_file(b"EMPTY   TXT") {
-    //     puts("\nCreated EMPTY.TXT\n");
-    // } else {
-    //     puts("\nCreate failed\n")
-    // }
+    if fs.create_file(b"EMPTY   TXT") {
+        puts("Created EMPTY.TXT\n");
+    } else {
+        puts("Create failed\n")
+    }
 
     // if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
     //     puts("\nWrite to EMPTY.TXT successful\n");

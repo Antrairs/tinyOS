@@ -87,25 +87,37 @@ impl<'a> Fat12<'a> {
     //     None
     // }
 
-    // pub fn create_file(&mut self, name: &[u8; 11]) -> bool {
-    //     let root = self.root_sector();
+    pub fn create_file(&mut self, name: &[u8; 11]) -> bool {
+        let root = self.root_sector();
 
-    //     for i in 0..self.root_entry_count {
-    //         let offset = root + i * 32;
-    //         let first = self.image[offset];
+        let root_sectors = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
 
-    //         if first != 0x00 && first != 0xE5 {
-    //             continue;
-    //         }
+        let mut buf = [0u8; SECTOR_SIZE];
 
-    //         let entry = &mut self.image[offset..offset + 32];
-    //         entry.fill(0);
-    //         entry[0..11].copy_from_slice(name);
-    //         entry[11] = 0x20; // 属性
-    //         return true;
-    //     }
-    //     false
-    // }
+        for sector in 0..root_sectors {
+            self.device.read_sector(root + sector, &mut buf);
+
+            // 一个 sector 有 16 个目录项 512 / 32 = 16
+            for i in 0..16 {
+                let offset = i * 32;
+                let first = buf[offset];
+
+                if  first != 0x00 && first != 0xE5 {
+                    continue;
+                }
+
+                let enrty = &mut buf[offset..offset + 32];
+
+                enrty.fill(0);
+                enrty[0..11].copy_from_slice(name);
+                enrty[11] = 0x20; // 属性
+
+                self.device.write_sector(root + sector, &buf);
+                return true;
+            }
+        }
+        false
+    }
 
     // pub fn write_bytes(&mut self, name: &[u8; 11], data: &[u8]) -> bool {
     //     let entry = match self.find_file(name) {
