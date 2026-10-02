@@ -71,6 +71,20 @@ pub extern "C" fn kernel_main() -> ! {
         puts("\nWrite to EMPTY.TXT failed\n");
     }
 
+    match fs.read_bytes(b"EMPTY   TXT") {
+        Some(data) => {
+            puts("\nRead from EMPTY.TXT: ");
+
+            for &c in data {
+                putchar(c);
+            }
+            putchar(b'\n');
+        }
+        None => {
+            puts("\nRead from EMPTY.TXT failed\n");
+        }
+    }
+
     halt();
 }
 

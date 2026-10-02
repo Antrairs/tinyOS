@@ -138,4 +138,48 @@ impl<'a> Fat12<'a> {
 
         true
     }
+
+    pub fn read_bytes(&self, name: &[u8; 11]) -> Option<&[u8]> {
+        let entry = match self.find_file(name) {
+            Some(offset) => offset,
+            None => return None,
+        };
+
+        // 读取 first_cluster
+        let cluster = u16::from_le_bytes([self.image[entry + 26], self.image[entry + 27]]) as usize;
+
+        // 读取 file_size
+        let size = u32::from_le_bytes([
+            self.image[entry + 28],
+            self.image[entry + 29],
+            self.image[entry + 30],
+            self.image[entry + 31],
+        ]) as usize;
+
+        if cluster < 2 {
+            return None;
+        }
+
+        let cluster_size = self.bytes_per_sector * self.sectors_per_cluster;
+
+        if size > cluster_size {
+            return None;
+        }
+
+        let root_sectors =
+            (self.root_entry_count * 32 + self.bytes_per_sector - 1) / self.bytes_per_sector;
+
+        let first_data_sector =
+            self.reserved_sectors + self.fat_count * self.sectors_per_fat + root_sectors;
+
+        let data_sector = first_data_sector + (cluster - 2) * self.sectors_per_cluster;
+
+        let data_offset = data_sector * self.bytes_per_sector;
+
+        if data_offset + size > self.image.len() {
+            return None;
+        }
+
+        Some(&self.image[data_offset..data_offset + size])
+    }
 }
