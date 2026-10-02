@@ -82,19 +82,20 @@ pub extern "C" fn kernel_main() -> ! {
         puts("Write to EMPTY.TXT failed\n");
     }
 
-    // match fs.read_bytes(b"EMPTY   TXT") {
-    //     Some(data) => {
-    //         puts("\nRead from EMPTY.TXT: ");
+    let mut file_buf = [0u8; SECTOR_SIZE];
+    match fs.read_bytes(b"EMPTY   TXT", &mut file_buf) {
+        Some(size) => {
+            puts("Read: ");
 
-    //         for &c in data {
-    //             putchar(c);
-    //         }
-    //         putchar(b'\n');
-    //     }
-    //     None => {
-    //         puts("\nRead from EMPTY.TXT failed\n");
-    //     }
-    // }
+            for &c in &file_buf[..size] {
+                putchar(c);
+            }
+            putchar(b'\n');
+        }
+        None => {
+            puts("Read from EMPTY.TXT failed\n");
+        }
+    }
 
     halt();
 }

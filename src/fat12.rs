@@ -174,47 +174,38 @@ impl<'a> Fat12<'a> {
         true
     }
 
-    // pub fn read_bytes(&self, name: &[u8; 11]) -> Option<&[u8]> {
-    //     let entry = match self.find_file(name) {
-    //         Some(offset) => offset,
-    //         None => return None,
-    //     };
+    pub fn read_bytes(&mut self, name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
+        let (dir_sector, entry_offset) = self.find_file(name)?;
 
-    //     // 读取 first_cluster
-    //     let cluster = u16::from_le_bytes([self.image[entry + 26], self.image[entry + 27]]) as usize;
+        let mut buf = [0u8; SECTOR_SIZE];
+        self.device.read_sector(dir_sector, &mut buf);
 
-    //     // 读取 file_size
-    //     let size = u32::from_le_bytes([
-    //         self.image[entry + 28],
-    //         self.image[entry + 29],
-    //         self.image[entry + 30],
-    //         self.image[entry + 31],
-    //     ]) as usize;
+        let cluster = u16::from_le_bytes([buf[entry_offset + 26], buf[entry_offset + 27]]) as usize;
 
-    //     if cluster < 2 {
-    //         return None;
-    //     }
+        let size = u32::from_le_bytes([
+            buf[entry_offset + 28],
+            buf[entry_offset + 29],
+            buf[entry_offset + 30],
+            buf[entry_offset + 31],
+        ]) as usize;
 
-    //     let cluster_size = self.bytes_per_sector * self.sectors_per_cluster;
+        if cluster < 2 {
+            return None;
+        }
 
-    //     if size > cluster_size {
-    //         return None;
-    //     }
+        if size > SECTOR_SIZE {
+            return None;
+        }
+        // 当前只支持读取一个扇区的数据
+        if size > out.len() {
+            return None;
+        }
 
-    //     let root_sectors =
-    //         (self.root_entry_count * 32 + self.bytes_per_sector - 1) / self.bytes_per_sector;
+        let data_sector = self.first_data_sector() + (cluster - 2) * self.sectors_per_cluster;
 
-    //     let first_data_sector =
-    //         self.reserved_sectors + self.fat_count * self.sectors_per_fat + root_sectors;
+        self.device.read_sector(data_sector, &mut buf);
+        out[..size].copy_from_slice(&buf[..size]);
 
-    //     let data_sector = first_data_sector + (cluster - 2) * self.sectors_per_cluster;
-
-    //     let data_offset = data_sector * self.bytes_per_sector;
-
-    //     if data_offset + size > self.image.len() {
-    //         return None;
-    //     }
-
-    //     Some(&self.image[data_offset..data_offset + size])
-    // }
+        Some(size)
+    }
 }
