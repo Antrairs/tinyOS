@@ -16,6 +16,8 @@ use block::{
 };
 
 mod virtio;
+use crate::virtio::VirtioBlock;
+
 
 global_asm!(
     r#"
@@ -34,8 +36,6 @@ _start:
 );
 
 const UART0: usize = 0x1000_0000;
-const IMAGE_SIZE: usize = include_bytes!("../build/fat12.img").len();
-static mut IMAGE: [u8; IMAGE_SIZE] = *include_bytes!("../build/fat12.img");
 
 fn putchar(c: u8) {
     const LSR: usize = 5;
@@ -58,21 +58,33 @@ fn puts(s: &str) {
 pub extern "C" fn kernel_main() -> ! {
     puts("\nHello tinyOS!\n");
 
-    match virtio::find_block_device() {
-        Some(_base) => {
-            puts("VirtIO block found!\n");
-        }
+    let base = match virtio::find_block_device() {
+        Some(base) => base,
         None => {
             puts("VirtIO block not found!\n");
+            halt();
         }
+    };
+
+    let mut disk = match VirtioBlock::new(base) {
+        Some(disk) => disk,
+        None => {
+            puts("VirtIO init failed!\n");
+            halt();
+        }
+    };
+
+    puts("VirtIO block initialized!\n");
+
+    let mut sector0 = [0u8; SECTOR_SIZE];
+
+    disk.read_sector(0, &mut sector0);
+
+    if sector0[510] == 0x55 && sector0[511] == 0xAA {
+        puts("Sector 0 read OK!\n");
+    } else {
+        puts("Sector 0 read failed!\n");
     }
-
-    // let image = unsafe { &mut *core::ptr::addr_of_mut!(IMAGE) };
-    // // let mut fs = Fat12::new(image);
-
-    // let mut disk = MemoryDisk::new(image);
-    
-    // let mut fs = Fat12::new(&mut disk);
 
     // fs.list_root_name(|name| {
     //     for &c in name {
