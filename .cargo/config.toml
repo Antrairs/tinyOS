@@ -13,5 +13,8 @@ runner = [
     "-m", "128M",
     "-nographic",
     "-bios", "default",
+    "-global", "virtio-mmio.force-legacy=false",
+    "-drive", "file=build/fat12.img,format=raw,id=hd0,if=none",
+    "-device", "virtio-blk-device,drive=hd0",
     "-kernel",
 ]

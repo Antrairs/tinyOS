@@ -15,6 +15,8 @@ use block::{
     SECTOR_SIZE,
 };
 
+mod virtio;
+
 global_asm!(
     r#"
     .section .text.entry
@@ -56,46 +58,55 @@ fn puts(s: &str) {
 pub extern "C" fn kernel_main() -> ! {
     puts("\nHello tinyOS!\n");
 
-    let image = unsafe { &mut *core::ptr::addr_of_mut!(IMAGE) };
-    // let mut fs = Fat12::new(image);
-
-    let mut disk = MemoryDisk::new(image);
-    
-    let mut fs = Fat12::new(&mut disk);
-
-    fs.list_root_name(|name| {
-        for &c in name {
-            putchar(c);
-        }
-        putchar(b'\n');
-    });
-
-    if fs.create_file(b"EMPTY   TXT") {
-        puts("Created EMPTY.TXT\n");
-    } else {
-        puts("Create failed\n")
-    }
-
-    if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
-        puts("Write to EMPTY.TXT successful\n");
-    } else {
-        puts("Write to EMPTY.TXT failed\n");
-    }
-
-    let mut file_buf = [0u8; SECTOR_SIZE];
-    match fs.read_bytes(b"EMPTY   TXT", &mut file_buf) {
-        Some(size) => {
-            puts("Read: ");
-
-            for &c in &file_buf[..size] {
-                putchar(c);
-            }
-            putchar(b'\n');
+    match virtio::find_block_device() {
+        Some(_base) => {
+            puts("VirtIO block found!\n");
         }
         None => {
-            puts("Read from EMPTY.TXT failed\n");
+            puts("VirtIO block not found!\n");
         }
     }
+
+    // let image = unsafe { &mut *core::ptr::addr_of_mut!(IMAGE) };
+    // // let mut fs = Fat12::new(image);
+
+    // let mut disk = MemoryDisk::new(image);
+    
+    // let mut fs = Fat12::new(&mut disk);
+
+    // fs.list_root_name(|name| {
+    //     for &c in name {
+    //         putchar(c);
+    //     }
+    //     putchar(b'\n');
+    // });
+
+    // if fs.create_file(b"EMPTY   TXT") {
+    //     puts("Created EMPTY.TXT\n");
+    // } else {
+    //     puts("Create failed\n")
+    // }
+
+    // if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
+    //     puts("Write to EMPTY.TXT successful\n");
+    // } else {
+    //     puts("Write to EMPTY.TXT failed\n");
+    // }
+
+    // let mut file_buf = [0u8; SECTOR_SIZE];
+    // match fs.read_bytes(b"EMPTY   TXT", &mut file_buf) {
+    //     Some(size) => {
+    //         puts("Read: ");
+
+    //         for &c in &file_buf[..size] {
+    //             putchar(c);
+    //         }
+    //         putchar(b'\n');
+    //     }
+    //     None => {
+    //         puts("Read from EMPTY.TXT failed\n");
+    //     }
+    // }
 
     halt();
 }
@@ -110,6 +121,6 @@ fn halt() -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    puts("\rKernel panic!\r");
+    puts("\nKernel panic!\n");
     halt();
 }
