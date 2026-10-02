@@ -11,7 +11,6 @@ use fat12::Fat12;
 mod block;
 use block::{
     BlockDevice,
-    MemoryDisk,
     SECTOR_SIZE,
 };
 
@@ -86,12 +85,17 @@ pub extern "C" fn kernel_main() -> ! {
         puts("Sector 0 read failed!\n");
     }
 
-    // fs.list_root_name(|name| {
-    //     for &c in name {
-    //         putchar(c);
-    //     }
-    //     putchar(b'\n');
-    // });
+    let mut fs = Fat12::new(&mut disk);
+
+    puts("FAT12 mounted!\n");
+    puts("Root directory:\n");
+
+    fs.list_root_name(|name| {
+        for &c in name {
+            putchar(c);
+        }
+        putchar(b'\n');
+    });
 
     // if fs.create_file(b"EMPTY   TXT") {
     //     puts("Created EMPTY.TXT\n");
