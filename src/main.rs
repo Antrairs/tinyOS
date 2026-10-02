@@ -59,24 +59,16 @@ pub extern "C" fn kernel_main() -> ! {
     let image = unsafe { &mut *core::ptr::addr_of_mut!(IMAGE) };
     // let mut fs = Fat12::new(image);
 
-    let disk = MemoryDisk::new(image);
+    let mut disk = MemoryDisk::new(image);
     
-    let mut sector0 = [0u8; SECTOR_SIZE];
+    let mut fs = Fat12::new(&mut disk);
 
-    disk.read_sector(0, &mut sector0);
-
-    if sector0[510] == 0x55 && sector0[511] == 0xAA {
-        puts("BlockDevice read OK!\n");
-    } else {
-        puts("BlockDevice read failed!\n");
-    }
-
-    // fs.list_root_name(|name| {
-    //     for &c in name {
-    //         putchar(c);
-    //     }
-    //     putchar(b'\n');
-    // });
+    fs.list_root_name(|name| {
+        for &c in name {
+            putchar(c);
+        }
+        putchar(b'\n');
+    });
 
     // if fs.create_file(b"EMPTY   TXT") {
     //     puts("\nCreated EMPTY.TXT\n");
