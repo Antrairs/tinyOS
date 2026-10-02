@@ -97,32 +97,32 @@ pub extern "C" fn kernel_main() -> ! {
         putchar(b'\n');
     });
 
-    // if fs.create_file(b"EMPTY   TXT") {
-    //     puts("Created EMPTY.TXT\n");
-    // } else {
-    //     puts("Create failed\n")
-    // }
+    if fs.create_file(b"PERSIST TXT") {
+        puts("Created PERSIST.TXT OK!\n");
+    } else {
+        puts("Create PERSIST.TXT failed!\n")
+    }
 
-    // if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
-    //     puts("Write to EMPTY.TXT successful\n");
-    // } else {
-    //     puts("Write to EMPTY.TXT failed\n");
-    // }
+    if fs.write_bytes(b"PERSIST TXT", b"Hello, TinyOS!") {
+        puts("Write to PERSIST.TXT OK!\n");
+    } else {
+        puts("Write to PERSIST.TXT failed!\n");
+    }
 
-    // let mut file_buf = [0u8; SECTOR_SIZE];
-    // match fs.read_bytes(b"EMPTY   TXT", &mut file_buf) {
-    //     Some(size) => {
-    //         puts("Read: ");
+    let mut file_buf = [0u8; SECTOR_SIZE];
+    match fs.read_bytes(b"PERSIST TXT", &mut file_buf) {
+        Some(size) => {
+            puts("Read: ");
 
-    //         for &c in &file_buf[..size] {
-    //             putchar(c);
-    //         }
-    //         putchar(b'\n');
-    //     }
-    //     None => {
-    //         puts("Read from EMPTY.TXT failed\n");
-    //     }
-    // }
+            for &c in &file_buf[..size] {
+                putchar(c);
+            }
+            putchar(b'\n');
+        }
+        None => {
+            puts("Read failed!\n");
+        }
+    }
 
     halt();
 }
