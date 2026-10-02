@@ -8,6 +8,13 @@ use core::ptr::{read_volatile, write_volatile};
 mod fat12;
 use fat12::Fat12;
 
+mod block;
+use block::{
+    BlockDevice,
+    MemoryDisk,
+    SECTOR_SIZE,
+};
+
 global_asm!(
     r#"
     .section .text.entry
@@ -50,40 +57,52 @@ pub extern "C" fn kernel_main() -> ! {
     puts("\nHello tinyOS!\n");
 
     let image = unsafe { &mut *core::ptr::addr_of_mut!(IMAGE) };
-    let mut fs = Fat12::new(image);
+    // let mut fs = Fat12::new(image);
 
-    fs.list_root_name(|name| {
-        for &c in name {
-            putchar(c);
-        }
-        putchar(b'\n');
-    });
+    let disk = MemoryDisk::new(image);
+    
+    let mut sector0 = [0u8; SECTOR_SIZE];
 
-    if fs.create_file(b"EMPTY   TXT") {
-        puts("\nCreated EMPTY.TXT\n");
+    disk.read_sector(0, &mut sector0);
+
+    if sector0[510] == 0x55 && sector0[511] == 0xAA {
+        puts("BlockDevice read OK!\n");
     } else {
-        puts("\nCreate failed\n")
+        puts("BlockDevice read failed!\n");
     }
 
-    if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
-        puts("\nWrite to EMPTY.TXT successful\n");
-    } else {
-        puts("\nWrite to EMPTY.TXT failed\n");
-    }
+    // fs.list_root_name(|name| {
+    //     for &c in name {
+    //         putchar(c);
+    //     }
+    //     putchar(b'\n');
+    // });
 
-    match fs.read_bytes(b"EMPTY   TXT") {
-        Some(data) => {
-            puts("\nRead from EMPTY.TXT: ");
+    // if fs.create_file(b"EMPTY   TXT") {
+    //     puts("\nCreated EMPTY.TXT\n");
+    // } else {
+    //     puts("\nCreate failed\n")
+    // }
 
-            for &c in data {
-                putchar(c);
-            }
-            putchar(b'\n');
-        }
-        None => {
-            puts("\nRead from EMPTY.TXT failed\n");
-        }
-    }
+    // if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
+    //     puts("\nWrite to EMPTY.TXT successful\n");
+    // } else {
+    //     puts("\nWrite to EMPTY.TXT failed\n");
+    // }
+
+    // match fs.read_bytes(b"EMPTY   TXT") {
+    //     Some(data) => {
+    //         puts("\nRead from EMPTY.TXT: ");
+
+    //         for &c in data {
+    //             putchar(c);
+    //         }
+    //         putchar(b'\n');
+    //     }
+    //     None => {
+    //         puts("\nRead from EMPTY.TXT failed\n");
+    //     }
+    // }
 
     halt();
 }
