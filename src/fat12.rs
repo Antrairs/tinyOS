@@ -73,20 +73,6 @@ impl<'a> Fat12<'a> {
         }
     }
 
-    // fn find_file(&self, name: &[u8; 11]) -> Option<usize> {
-    //     let root = self.root_sector();
-    //     for i in 0..self.root_entry_count {
-    //         let offset = root + i * 32;
-    //         if self.image[offset] == 0x00 {
-    //             break;
-    //         }
-    //         if &self.image[offset..offset + 11] == name {
-    //             return Some(offset);
-    //         }
-    //     }
-    //     None
-    // }
-
     pub fn create_file(&mut self, name: &[u8; 11]) -> bool {
         let root = self.root_sector();
 
@@ -102,7 +88,7 @@ impl<'a> Fat12<'a> {
                 let offset = i * 32;
                 let first = buf[offset];
 
-                if  first != 0x00 && first != 0xE5 {
+                if first != 0x00 && first != 0xE5 {
                     continue;
                 }
 
@@ -119,47 +105,74 @@ impl<'a> Fat12<'a> {
         false
     }
 
-    // pub fn write_bytes(&mut self, name: &[u8; 11], data: &[u8]) -> bool {
-    //     let entry = match self.find_file(name) {
-    //         Some(offset) => offset,
-    //         None => return false,
-    //     };
+    fn find_file(&mut self, name: &[u8; 11]) -> Option<(usize, usize)> {
+        let root = self.root_sector();
 
-    //     let cluster_size = self.bytes_per_sector * self.sectors_per_cluster;
+        let root_sectors = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
 
-    //     if data.len() > cluster_size {
-    //         return false;
-    //     }
+        let mut buf = [0u8; SECTOR_SIZE];
 
-    //     // 当前阶段固定使用 cluster 2
-    //     let cluster = 2u16;
+        for sector in 0..root_sectors {
+            let disk_sector = root + sector;
+            self.device.read_sector(disk_sector, &mut buf);
+            for i in 0..16 {
+                let offset = i * 32;
 
-    //     // FAT[2] = EOF
-    //     for fat in 0..self.fat_count {
-    //         let fat_start =
-    //             (self.reserved_sectors + fat * self.sectors_per_fat) * self.bytes_per_sector;
+                if buf[offset] == 0x00 {
+                    return None;
+                }
 
-    //         self.image[fat_start + 3] = 0xFF;
+                if &buf[offset..offset + 11] == name {
+                    return Some((disk_sector, offset));
+                }
+            }
+        }
+        None
+    }
 
-    //         self.image[fat_start + 4] = (self.image[fat_start + 4] & 0xF0) | 0x0F;
-    //     }
+    fn first_data_sector(&self) -> usize {
+        let root_sectors =
+            (self.root_entry_count * 32 + self.bytes_per_sector - 1) / self.bytes_per_sector;
+        self.reserved_sectors + self.fat_count * self.sectors_per_fat + root_sectors
+    }
 
-    //     // 找到 Data Area
-    //     let root_sectors =
-    //         (self.root_entry_count * 32 + self.bytes_per_sector - 1) / self.bytes_per_sector;
-    //     let first_data_sector =
-    //         self.reserved_sectors + self.fat_count * self.sectors_per_fat + root_sectors;
-    //     let data_offset = first_data_sector * self.bytes_per_sector;
+    pub fn write_bytes(&mut self, name: &[u8; 11], data: &[u8]) -> bool {
+        let (dir_sector, entry_offset) = match self.find_file(name) {
+            Some(location) => location,
+            None => return false,
+        };
 
-    //     // 写数据
-    //     self.image[data_offset..data_offset + data.len()].copy_from_slice(data);
-    //     // first_cluster = 2
-    //     self.image[entry + 26..entry + 28].copy_from_slice(&cluster.to_le_bytes());
-    //     // file_size = data.len()
-    //     self.image[entry + 28..entry + 32].copy_from_slice(&(data.len() as u32).to_le_bytes());
+        if data.len() > SECTOR_SIZE {
+            return false;
+        }
 
-    //     true
-    // }
+        let cluster = 2u16;
+        let mut buf = [0u8; SECTOR_SIZE];
+
+        for fat in 0..self.fat_count {
+            let fat_sector = self.reserved_sectors + fat * self.sectors_per_fat;
+
+            self.device.read_sector(fat_sector, &mut buf);
+            buf[3] = 0xFF;
+            buf[4] = (buf[4] & 0xF0) | 0x0F;
+            self.device.write_sector(fat_sector, &buf);
+        }
+
+        // 写 cluster 2
+        let data_sector = self.first_data_sector();
+        self.device.read_sector(data_sector, &mut buf);
+        buf[..data.len()].copy_from_slice(data);
+        self.device.write_sector(data_sector, &buf);
+
+        // 更新目录项
+        self.device.read_sector(dir_sector, &mut buf);
+        buf[entry_offset + 26..entry_offset + 28].copy_from_slice(&cluster.to_le_bytes());
+        buf[entry_offset + 28..entry_offset + 32]
+            .copy_from_slice(&(data.len() as u32).to_le_bytes());
+        self.device.write_sector(dir_sector, &buf);
+
+        true
+    }
 
     // pub fn read_bytes(&self, name: &[u8; 11]) -> Option<&[u8]> {
     //     let entry = match self.find_file(name) {

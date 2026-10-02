@@ -76,11 +76,11 @@ pub extern "C" fn kernel_main() -> ! {
         puts("Create failed\n")
     }
 
-    // if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
-    //     puts("\nWrite to EMPTY.TXT successful\n");
-    // } else {
-    //     puts("\nWrite to EMPTY.TXT failed\n");
-    // }
+    if fs.write_bytes(b"EMPTY   TXT", b"Hello, TinyOS!") {
+        puts("Write to EMPTY.TXT successful\n");
+    } else {
+        puts("Write to EMPTY.TXT failed\n");
+    }
 
     // match fs.read_bytes(b"EMPTY   TXT") {
     //     Some(data) => {
