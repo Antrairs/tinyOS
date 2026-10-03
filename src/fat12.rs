@@ -76,6 +76,77 @@ impl<'a> Fat12<'a> {
         }
     }
 
+    fn find_free_root_entry(&mut self) -> Option<(usize, usize)> {
+        let root = self.root_sector();
+
+        let root_sectors = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
+
+        let mut buf = [0u8; SECTOR_SIZE];
+
+        for sector in 0..root_sectors {
+            let disk_sector = root + sector;
+            self.device.read_sector(disk_sector, &mut buf);
+            for i in 0..16 {
+                let offset = i * 32;
+
+                if buf[offset] == 0x00 || buf[offset] == 0xE5 {
+                    return Some((disk_sector, offset));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn mkdir_root(&mut self, name: &[u8; 11]) -> bool {
+        if self.sectors_per_cluster != 1 {
+            return false;
+        }
+
+        // 不允许重名
+        if self.find_file(name).is_some() {
+            return false;
+        }
+
+        // 保证根目录有空位置
+        let (dir_sector, entry_offset) = match self.find_free_root_entry() {
+            Some(location) => location,
+            None => return false,
+        };
+
+        // 给新目录分配 cluster
+        let cluster = match self.find_free_cluster() {
+            Some(cluster) => cluster,
+            None => return false,
+        };
+
+        // 当前目录只占一个 cluster
+        self.set_fat_entry(cluster as usize, 0xFFF);
+
+        // 初始化目录内容
+        let mut buf = [0u8; SECTOR_SIZE];
+        buf[0..11].copy_from_slice(b".          ");
+        buf[11] = 0x10;
+        buf[26..28].copy_from_slice(&cluster.to_le_bytes());
+
+        let parent_offset = 32;
+        buf[parent_offset..parent_offset + 11].copy_from_slice(b"..         ");
+        buf[parent_offset + 11] = 0x10;
+        buf[parent_offset + 26..parent_offset + 28].copy_from_slice(&0u16.to_le_bytes());
+
+        let sector = self.cluster_to_sector(cluster);
+        self.device.write_sector(sector, &buf);
+
+        self.device.read_sector(dir_sector, &mut buf);
+        let entry = &mut buf[entry_offset..entry_offset + 32];
+        entry.fill(0);
+        entry[0..11].copy_from_slice(name);
+        entry[11] = 0x10;
+        entry[26..28].copy_from_slice(&cluster.to_le_bytes());
+        self.device.write_sector(dir_sector, &buf);
+
+        true
+    }
+
     pub fn create_file(&mut self, name: &[u8; 11]) -> bool {
         let root = self.root_sector();
 

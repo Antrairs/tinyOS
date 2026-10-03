@@ -93,40 +93,18 @@ pub extern "C" fn kernel_main() -> ! {
         putchar(b'\n');
     });
 
-    let mut big = [0u8; 700];
-
-    for i in 0..700 {
-        if i < 512 {
-            big[i] = b'A';
-        } else {
-            big[i] = b'B';
-        }
-    }
-
-    let name = b"BIG     TXT";
-
-    fs.create_file(name);
-
-    if fs.write_bytes(name, &big) {
-        puts("Write BIG.TXT OK!\n");
+    if fs.mkdir_root(b"TEST       ") {
+        puts("mkdir TEST OK!\n");
     } else {
-        puts("Write BIG.TXT failed!\n");
+        puts("mkdir TEST failed!\n");
     }
 
-    let mut out = [0u8; 700];
-
-    match fs.read_bytes(name, &mut out) {
-        Some(size) => {
-            if size == big.len() && out == big {
-                puts("Read BIG.TXT OK!\n");
-            } else {
-                puts("BIG.TXT data wrong!\n");
-            }
+    fs.list_root_name(|name| {
+        for &c in name {
+            putchar(c);
         }
-        None => {
-            puts("Read BIG.TXT failed!\n");
-        }
-    }
+        putchar(b'\n');
+    });
 
     halt();
 }
