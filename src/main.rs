@@ -9,14 +9,10 @@ mod fat12;
 use fat12::Fat12;
 
 mod block;
-use block::{
-    BlockDevice,
-    SECTOR_SIZE,
-};
+use block::{BlockDevice, SECTOR_SIZE};
 
 mod virtio;
 use crate::virtio::VirtioBlock;
-
 
 global_asm!(
     r#"
@@ -97,32 +93,47 @@ pub extern "C" fn kernel_main() -> ! {
         putchar(b'\n');
     });
 
-    if fs.create_file(b"PERSIST TXT") {
-        puts("Created PERSIST.TXT OK!\n");
-    } else {
-        puts("Create PERSIST.TXT failed!\n")
-    }
+    let one = b"ONE     TXT";
+    let two = b"TWO     TXT";
 
-    if fs.write_bytes(b"PERSIST TXT", b"Hello, TinyOS!") {
-        puts("Write to PERSIST.TXT OK!\n");
-    } else {
-        puts("Write to PERSIST.TXT failed!\n");
-    }
+    fs.create_file(one);
+    fs.create_file(two);
 
-    let mut file_buf = [0u8; SECTOR_SIZE];
-    match fs.read_bytes(b"PERSIST TXT", &mut file_buf) {
-        Some(size) => {
-            puts("Read: ");
+    if fs.write_bytes(one, b"File one") {
+        puts("Write ONE.TXT OK!\n");
+    };
 
-            for &c in &file_buf[..size] {
+    if fs.write_bytes(two, b"File two") {
+        puts("Write TWO.TXT OK!\n");
+    };
+
+    let mut buf = [0u8; SECTOR_SIZE];
+
+    match fs.read_bytes(one, &mut buf) {
+        Some(len) => {
+            puts("ONE: ");
+            for &c in &buf[..len] {
                 putchar(c);
             }
             putchar(b'\n');
         }
         None => {
-            puts("Read failed!\n");
+            puts("Read ONE.TXT failed!\n");
         }
-    }
+    };
+
+    match fs.read_bytes(two, &mut buf) {
+        Some(len) => {
+            puts("TWO: ");
+            for &c in &buf[..len] {
+                putchar(c);
+            }
+            putchar(b'\n');
+        }
+        None => {
+            puts("Read TWO.TXT failed!\n");
+        }
+    };
 
     halt();
 }

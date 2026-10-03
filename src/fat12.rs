@@ -13,6 +13,7 @@ pub struct Fat12<'a> {
     fat_count: usize,
     root_entry_count: usize,
     sectors_per_fat: usize,
+    total_sectors: usize,
 }
 
 impl<'a> Fat12<'a> {
@@ -26,6 +27,7 @@ impl<'a> Fat12<'a> {
         let reserved_sectors = le16(&boot, 14);
         let fat_count = boot[16] as usize;
         let root_entry_count = le16(&boot, 17);
+        let total_sectors = le16(&boot, 19);
         let sectors_per_fat = le16(&boot, 22);
 
         Self {
@@ -36,6 +38,7 @@ impl<'a> Fat12<'a> {
             fat_count,
             root_entry_count,
             sectors_per_fat,
+            total_sectors,
         }
     }
 
@@ -136,6 +139,87 @@ impl<'a> Fat12<'a> {
         self.reserved_sectors + self.fat_count * self.sectors_per_fat + root_sectors
     }
 
+    fn cluster_count(&self) -> usize {
+        let data_sectors = self.total_sectors - self.first_data_sector();
+        data_sectors / self.sectors_per_cluster
+    }
+
+    // 从 fat 表中两个共享字节中取出自己的 12 bit
+    fn fat_entry(&mut self, cluster: usize) -> u16 {
+        let fat_offset = cluster + cluster / 2;
+
+        let sector = self.reserved_sectors + fat_offset / SECTOR_SIZE;
+        let offset = fat_offset % SECTOR_SIZE;
+
+        let mut buf = [0u8; SECTOR_SIZE];
+        self.device.read_sector(sector, &mut buf);
+
+        let first = buf[offset];
+        let second = if offset + 1 < SECTOR_SIZE {
+            buf[offset + 1]
+        } else {
+            let mut next = [0u8; SECTOR_SIZE];
+            self.device.read_sector(sector + 1, &mut next);
+            next[0]
+        };
+        if cluster % 2 == 0 {
+            (first as u16) | ((second as u16 & 0x0F) << 8)
+        } else {
+            ((first as u16) >> 4) | ((second as u16) << 4)
+        }
+    }
+
+    // 修改自己的 12 bit
+    fn set_fat_entry(&mut self, cluster: usize, value: u16) {
+        let value = value & 0x0FFF;
+
+        let fat_offset = cluster + cluster / 2;
+
+        for fat in 0..self.fat_count {
+            let fat_start = self.reserved_sectors + fat * self.sectors_per_fat;
+            let sector = fat_start + fat_offset / SECTOR_SIZE;
+            let offset = fat_offset % SECTOR_SIZE;
+
+            let mut buf = [0u8; SECTOR_SIZE];
+            self.device.read_sector(sector, &mut buf);
+
+            if offset + 1 < SECTOR_SIZE {
+                if cluster % 2 == 0 {
+                    buf[offset] = value as u8;
+                    buf[offset + 1] = (buf[offset + 1] & 0xF0) | ((value >> 8) as u8 & 0x0F);
+                } else {
+                    buf[offset] = (buf[offset] & 0x0F) | ((value << 4) as u8 & 0xF0);
+                    buf[offset + 1] = (value >> 4) as u8;
+                }
+
+                self.device.write_sector(sector, &buf);
+            } else {
+                let mut next = [0u8; SECTOR_SIZE];
+                self.device.read_sector(sector + 1, &mut next);
+
+                if cluster % 2 == 0 {
+                    buf[offset] = value as u8;
+                    next[0] = (next[0] & 0xF0) | ((value >> 8) as u8 & 0x0F);
+                } else {
+                    buf[offset] = (buf[offset] & 0x0F) | ((value << 4) as u8 & 0xF0);
+                    next[0] = (value >> 4) as u8;
+                }
+                self.device.write_sector(sector, &buf);
+                self.device.write_sector(sector + 1, &next);
+            }
+        }
+    }
+
+    fn find_free_cluster(&mut self) -> Option<u16> {
+        let max_cluster = self.cluster_count() + 1; // cluster 从 2 开始
+        for cluster in 2..=max_cluster {
+            if self.fat_entry(cluster) == 0 {
+                return Some(cluster as u16);
+            }
+        }
+        None
+    }
+
     pub fn write_bytes(&mut self, name: &[u8; 11], data: &[u8]) -> bool {
         let (dir_sector, entry_offset) = match self.find_file(name) {
             Some(location) => location,
@@ -146,21 +230,18 @@ impl<'a> Fat12<'a> {
             return false;
         }
 
-        let cluster = 2u16;
+        let cluster = match self.find_free_cluster() {
+            Some(c) => c,
+            None => return false,
+        };
         let mut buf = [0u8; SECTOR_SIZE];
 
-        for fat in 0..self.fat_count {
-            let fat_sector = self.reserved_sectors + fat * self.sectors_per_fat;
+        self.set_fat_entry(cluster as usize, 0xFFF);
 
-            self.device.read_sector(fat_sector, &mut buf);
-            buf[3] = 0xFF;
-            buf[4] = (buf[4] & 0xF0) | 0x0F;
-            self.device.write_sector(fat_sector, &buf);
-        }
-
-        // 写 cluster 2
-        let data_sector = self.first_data_sector();
-        self.device.read_sector(data_sector, &mut buf);
+        // 找空闲 cluster
+        let data_sector =
+            self.first_data_sector() + (cluster as usize - 2) * self.sectors_per_cluster;
+        buf.fill(0);
         buf[..data.len()].copy_from_slice(data);
         self.device.write_sector(data_sector, &buf);
 
