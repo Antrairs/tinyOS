@@ -169,6 +169,16 @@ impl<'a> Fat12<'a> {
         }
     }
 
+    fn next_cluster(&mut self, cluster: u16) -> Option<u16> {
+        let value = self.fat_entry(cluster as usize);
+
+        if value >= 0x002 && value <= 0xFEF {
+            Some(value)
+        } else {
+            None
+        }
+    }
+
     // 修改自己的 12 bit
     fn set_fat_entry(&mut self, cluster: usize, value: u16) {
         let value = value & 0x0FFF;
@@ -220,34 +230,62 @@ impl<'a> Fat12<'a> {
         None
     }
 
+    fn cluster_to_sector(&self, cluster: u16) -> usize {
+        self.first_data_sector() + (cluster as usize - 2) * self.sectors_per_cluster
+    }
+
     pub fn write_bytes(&mut self, name: &[u8; 11], data: &[u8]) -> bool {
         let (dir_sector, entry_offset) = match self.find_file(name) {
             Some(location) => location,
             None => return false,
         };
 
-        if data.len() > SECTOR_SIZE {
+        // 为简化当前实现支持 1 cluster = 1 sector
+        if self.sectors_per_cluster != 1 {
             return false;
         }
 
-        let cluster = match self.find_free_cluster() {
-            Some(c) => c,
+        if data.is_empty() {
+            return true;
+        }
+
+        let first_cluster = match self.find_free_cluster() {
+            Some(cluster) => cluster,
             None => return false,
         };
+
+        self.set_fat_entry(first_cluster as usize, 0xFFF); // 标记为已占用
         let mut buf = [0u8; SECTOR_SIZE];
+        let mut current_cluster = first_cluster;
+        let mut written = 0usize;
+        while written < data.len() {
+            let chunk_size = core::cmp::min(data.len() - written, SECTOR_SIZE);
 
-        self.set_fat_entry(cluster as usize, 0xFFF);
+            buf.fill(0);
+            buf[..chunk_size].copy_from_slice(&data[written..written + chunk_size]);
 
-        // 找空闲 cluster
-        let data_sector =
-            self.first_data_sector() + (cluster as usize - 2) * self.sectors_per_cluster;
-        buf.fill(0);
-        buf[..data.len()].copy_from_slice(data);
-        self.device.write_sector(data_sector, &buf);
+            let sector = self.cluster_to_sector(current_cluster);
+            self.device.write_sector(sector, &buf);
+            written += chunk_size;
+
+            if written == data.len() {
+                break;
+            }
+
+            let next = match self.find_free_cluster() {
+                Some(cluster) => cluster,
+                None => return false,
+            };
+
+            self.set_fat_entry(next as usize, 0xFFF);
+            self.set_fat_entry(current_cluster as usize, next);
+
+            current_cluster = next;
+        }
 
         // 更新目录项
         self.device.read_sector(dir_sector, &mut buf);
-        buf[entry_offset + 26..entry_offset + 28].copy_from_slice(&cluster.to_le_bytes());
+        buf[entry_offset + 26..entry_offset + 28].copy_from_slice(&first_cluster.to_le_bytes());
         buf[entry_offset + 28..entry_offset + 32]
             .copy_from_slice(&(data.len() as u32).to_le_bytes());
         self.device.write_sector(dir_sector, &buf);
@@ -261,7 +299,7 @@ impl<'a> Fat12<'a> {
         let mut buf = [0u8; SECTOR_SIZE];
         self.device.read_sector(dir_sector, &mut buf);
 
-        let cluster = u16::from_le_bytes([buf[entry_offset + 26], buf[entry_offset + 27]]) as usize;
+        let cluster = u16::from_le_bytes([buf[entry_offset + 26], buf[entry_offset + 27]]);
 
         let size = u32::from_le_bytes([
             buf[entry_offset + 28],
@@ -270,23 +308,49 @@ impl<'a> Fat12<'a> {
             buf[entry_offset + 31],
         ]) as usize;
 
+        if size == 0 {
+            return Some(0);
+        }
+
         if cluster < 2 {
             return None;
         }
 
-        if size > SECTOR_SIZE {
-            return None;
-        }
-        // 当前只支持读取一个扇区的数据
+        // 避免读取超过 out 的长度
         if size > out.len() {
             return None;
         }
 
-        let data_sector = self.first_data_sector() + (cluster - 2) * self.sectors_per_cluster;
+        // 为简化当前实现支持 1 cluster = 1 sector
+        if self.sectors_per_cluster != 1 {
+            return None;
+        }
 
-        self.device.read_sector(data_sector, &mut buf);
-        out[..size].copy_from_slice(&buf[..size]);
+        let mut current_cluster = cluster;
+        let mut copied = 0usize;
+        let mut steps = 0usize;
 
+        while copied < size {
+            steps += 1;
+
+            // 防止损坏的 FAT 簇链导致无限循环
+            if steps > self.cluster_count() {
+                return None;
+            }
+
+            let sector = self.cluster_to_sector(current_cluster);
+            self.device.read_sector(sector, &mut buf);
+
+            let truck_size = core::cmp::min(size - copied, SECTOR_SIZE);
+
+            out[copied..copied + truck_size].copy_from_slice(&buf[..truck_size]);
+
+            copied += truck_size;
+
+            if copied < size {
+                current_cluster = self.next_cluster(current_cluster)?;
+            };
+        }
         Some(size)
     }
 }

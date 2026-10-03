@@ -93,47 +93,40 @@ pub extern "C" fn kernel_main() -> ! {
         putchar(b'\n');
     });
 
-    let one = b"ONE     TXT";
-    let two = b"TWO     TXT";
+    let mut big = [0u8; 700];
 
-    fs.create_file(one);
-    fs.create_file(two);
+    for i in 0..700 {
+        if i < 512 {
+            big[i] = b'A';
+        } else {
+            big[i] = b'B';
+        }
+    }
 
-    if fs.write_bytes(one, b"File one") {
-        puts("Write ONE.TXT OK!\n");
-    };
+    let name = b"BIG     TXT";
 
-    if fs.write_bytes(two, b"File two") {
-        puts("Write TWO.TXT OK!\n");
-    };
+    fs.create_file(name);
 
-    let mut buf = [0u8; SECTOR_SIZE];
+    if fs.write_bytes(name, &big) {
+        puts("Write BIG.TXT OK!\n");
+    } else {
+        puts("Write BIG.TXT failed!\n");
+    }
 
-    match fs.read_bytes(one, &mut buf) {
-        Some(len) => {
-            puts("ONE: ");
-            for &c in &buf[..len] {
-                putchar(c);
+    let mut out = [0u8; 700];
+
+    match fs.read_bytes(name, &mut out) {
+        Some(size) => {
+            if size == big.len() && out == big {
+                puts("Read BIG.TXT OK!\n");
+            } else {
+                puts("BIG.TXT data wrong!\n");
             }
-            putchar(b'\n');
         }
         None => {
-            puts("Read ONE.TXT failed!\n");
+            puts("Read BIG.TXT failed!\n");
         }
-    };
-
-    match fs.read_bytes(two, &mut buf) {
-        Some(len) => {
-            puts("TWO: ");
-            for &c in &buf[..len] {
-                putchar(c);
-            }
-            putchar(b'\n');
-        }
-        None => {
-            puts("Read TWO.TXT failed!\n");
-        }
-    };
+    }
 
     halt();
 }
