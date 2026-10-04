@@ -86,20 +86,44 @@ pub extern "C" fn kernel_main() -> ! {
     puts("FAT12 mounted!\n");
     puts("Root directory:\n");
 
-    fs.list_root_name(|name| {
-        for &c in name {
-            putchar(c);
-        }
-        putchar(b'\n');
-    });
-
-    if fs.mkdir_root(b"TEST       ") {
+    let dir_name = b"TEST       ";
+    if fs.mkdir_root(dir_name) {
         puts("mkdir TEST OK!\n");
-    } else {
-        puts("mkdir TEST failed!\n");
     }
 
-    fs.list_root_name(|name| {
+    let dir = match fs.find_dir(0, dir_name) {
+        Some(cluster) => cluster,
+        None => {
+            puts("Find TEST failed!\n");
+            halt();
+        }
+    };
+
+    let name = b"HELLO   TXT";
+    let expected = b"Hello from TEST!\n";
+
+    if fs.create_file(dir, name) {
+        if !fs.write_bytes(dir, name, expected) {
+            puts("Write failed!\n");
+            halt();
+        }
+        puts("Create and write OK!\n");
+    }
+
+    let mut actual = [0u8; 64];
+
+    match fs.read_bytes(dir, name, &mut actual) {
+        Some(size) if &actual[..size] == expected => {
+            puts("Subdirectory read PASS!\n");
+        }
+        _ => {
+            puts("Subdirectory read FAIL!\n");
+            halt();
+        }
+    }
+
+    puts("TEST directory: \n");
+    fs.list_dir(dir, |name| {
         for &c in name {
             putchar(c);
         }

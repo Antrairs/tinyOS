@@ -46,18 +46,29 @@ impl<'a> Fat12<'a> {
         self.reserved_sectors + self.fat_count * self.sectors_per_fat
     }
 
-    pub fn list_root_name<F>(&mut self, mut f: F)
+    fn dir_sectors(&self, dir_cluster: u16) -> (usize, usize) {
+        if dir_cluster == 0 {
+            // 根目录
+            let root = self.root_sector();
+            let count = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
+
+            (root, count)
+        } else {
+            // 非根目录
+            (self.cluster_to_sector(dir_cluster), 1)
+        }
+    }
+
+    pub fn list_dir<F>(&mut self, dir_cluster: u16, mut f: F)
     where
         F: FnMut(&[u8]),
     {
-        let root = self.root_sector();
-
-        let root_sectors = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
+        let (start_sector, sector_count) = self.dir_sectors(dir_cluster);
 
         let mut buf = [0u8; SECTOR_SIZE];
 
-        for sector in 0..root_sectors {
-            self.device.read_sector(root + sector, &mut buf);
+        for sector in 0..sector_count {
+            self.device.read_sector(start_sector + sector, &mut buf);
 
             for i in 0..16 {
                 let offset = i * 32;
@@ -103,7 +114,7 @@ impl<'a> Fat12<'a> {
         }
 
         // 不允许重名
-        if self.find_file(name).is_some() {
+        if self.find_file(0, name).is_some() {
             return false;
         }
 
@@ -147,47 +158,48 @@ impl<'a> Fat12<'a> {
         true
     }
 
-    pub fn create_file(&mut self, name: &[u8; 11]) -> bool {
-        let root = self.root_sector();
+    pub fn create_file(&mut self, dir_cluster: u16, name: &[u8; 11]) -> bool {
+        if self.find_file(dir_cluster, name).is_some() {
+            return false;
+        }
 
-        let root_sectors = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
+        let (sector_sector, sector_count) = self.dir_sectors(dir_cluster);
 
         let mut buf = [0u8; SECTOR_SIZE];
 
-        for sector in 0..root_sectors {
-            self.device.read_sector(root + sector, &mut buf);
+        for sector in 0..sector_count {
+            let disk_sector = sector_sector + sector;
+
+            self.device.read_sector(disk_sector, &mut buf);
 
             // 一个 sector 有 16 个目录项 512 / 32 = 16
             for i in 0..16 {
                 let offset = i * 32;
-                let first = buf[offset];
 
-                if first != 0x00 && first != 0xE5 {
+                if buf[offset] != 0x00 && buf[offset] != 0xE5 {
                     continue;
                 }
 
-                let enrty = &mut buf[offset..offset + 32];
+                let entry = &mut buf[offset..offset + 32];
 
-                enrty.fill(0);
-                enrty[0..11].copy_from_slice(name);
-                enrty[11] = 0x20; // 属性
+                entry.fill(0);
+                entry[0..11].copy_from_slice(name);
+                entry[11] = 0x20; // 属性
 
-                self.device.write_sector(root + sector, &buf);
+                self.device.write_sector(disk_sector, &buf);
                 return true;
             }
         }
         false
     }
 
-    fn find_file(&mut self, name: &[u8; 11]) -> Option<(usize, usize)> {
-        let root = self.root_sector();
-
-        let root_sectors = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
+    fn find_file(&mut self, dir_cluster: u16, name: &[u8; 11]) -> Option<(usize, usize)> {
+        let (start_sector, sector_count) = self.dir_sectors(dir_cluster);
 
         let mut buf = [0u8; SECTOR_SIZE];
 
-        for sector in 0..root_sectors {
-            let disk_sector = root + sector;
+        for sector in 0..sector_count {
+            let disk_sector = start_sector + sector;
             self.device.read_sector(disk_sector, &mut buf);
             for i in 0..16 {
                 let offset = i * 32;
@@ -196,12 +208,29 @@ impl<'a> Fat12<'a> {
                     return None;
                 }
 
+                if buf[offset] == 0xE5 {
+                    continue;
+                }
+
                 if &buf[offset..offset + 11] == name {
                     return Some((disk_sector, offset));
                 }
             }
         }
         None
+    }
+
+    pub fn find_dir(&mut self, dir_cluster: u16, name: &[u8; 11]) -> Option<u16> {
+        let (sector, offset) = self.find_file(dir_cluster, name)?;
+
+        let mut buf = [0u8; SECTOR_SIZE];
+        self.device.read_sector(sector, &mut buf);
+
+        if buf[offset + 11] & 0x10 == 0 {
+            return None;
+        }
+
+        Some(u16::from_le_bytes([buf[offset + 26], buf[offset + 27]]))
     }
 
     fn first_data_sector(&self) -> usize {
@@ -305,8 +334,8 @@ impl<'a> Fat12<'a> {
         self.first_data_sector() + (cluster as usize - 2) * self.sectors_per_cluster
     }
 
-    pub fn write_bytes(&mut self, name: &[u8; 11], data: &[u8]) -> bool {
-        let (dir_sector, entry_offset) = match self.find_file(name) {
+    pub fn write_bytes(&mut self, dir_cluster: u16, name: &[u8; 11], data: &[u8]) -> bool {
+        let (dir_sector, entry_offset) = match self.find_file(dir_cluster, name) {
             Some(location) => location,
             None => return false,
         };
@@ -364,8 +393,13 @@ impl<'a> Fat12<'a> {
         true
     }
 
-    pub fn read_bytes(&mut self, name: &[u8; 11], out: &mut [u8]) -> Option<usize> {
-        let (dir_sector, entry_offset) = self.find_file(name)?;
+    pub fn read_bytes(
+        &mut self,
+        dir_cluster: u16,
+        name: &[u8; 11],
+        out: &mut [u8],
+    ) -> Option<usize> {
+        let (dir_sector, entry_offset) = self.find_file(dir_cluster, name)?;
 
         let mut buf = [0u8; SECTOR_SIZE];
         self.device.read_sector(dir_sector, &mut buf);
