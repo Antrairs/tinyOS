@@ -141,6 +141,7 @@ pub extern "C" fn kernel_main() -> ! {
                 puts("touch  - create file\n");
                 puts("mkdir  - create directory\n");
                 puts("cd     - change directory\n");
+                puts("write  - write file\n");
             }
             b"dir" => {
                 fs.list_dir(current_dir, |name| {
@@ -229,6 +230,39 @@ pub extern "C" fn kernel_main() -> ! {
                     None => {
                         puts("Directory not found\n");
                     }
+                }
+            }
+            b"write" => {
+                let space = match arg.iter().position(|&b| b == b' ') {
+                    Some(pos) => pos,
+                    None => {
+                        puts("Usage: write <filename> <text>\n");
+                        continue;
+                    }
+                };
+
+                let filename = &arg[..space];
+                let mut text_start = space + 1;
+
+                // 跳过文件名和正文之间多余的空格
+                while text_start < arg.len() && arg[text_start] == b' ' {
+                    text_start += 1;
+                }
+
+                let text = &arg[text_start..];
+
+                let name = match to_83(filename) {
+                    Some(name) => name,
+                    None => {
+                        puts("Invalid filename\n");
+                        continue;
+                    }
+                };
+
+                if fs.write_bytes(current_dir, &name, text) {
+                    puts("Write OK\n");
+                } else {
+                    puts("Write failed\n");
                 }
             }
             _ => {
