@@ -129,11 +129,9 @@ pub extern "C" fn kernel_main() -> ! {
                 while arg_start < input.len() && input[arg_start] == b' ' {
                     arg_start += 1;
                 }
-                ( &input[..pos], &input[arg_start..] )
+                (&input[..pos], &input[arg_start..])
             }
-            None => {
-                (input, &[][..])
-            }
+            None => (input, &[][..]),
         };
 
         match cmd {
@@ -141,6 +139,7 @@ pub extern "C" fn kernel_main() -> ! {
                 puts("help   - show commands\n");
                 puts("dir    - list directory\n");
                 puts("touch  - create file\n");
+                puts("mkdir  - create directory\n");
             }
             b"dir" => {
                 fs.list_dir(current_dir, |name| {
@@ -169,7 +168,26 @@ pub extern "C" fn kernel_main() -> ! {
                 } else {
                     puts("Create failed\n");
                 }
+            }
+            b"mkdir" => {
+                if arg.is_empty() {
+                    puts("Usage: mkdir <dirname>\n");
+                    continue;
+                }
 
+                let name = match to_83(arg) {
+                    Some(name) => name,
+                    None => {
+                        puts("Invalid directory name\n");
+                        continue;
+                    }
+                };
+
+                if fs.mkdir(current_dir, &name) {
+                    puts("Directory created\n");
+                } else {
+                    puts("Create failed\n");
+                }
             }
             _ => {
                 puts("Unknown command\n");
