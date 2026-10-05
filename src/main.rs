@@ -142,6 +142,7 @@ pub extern "C" fn kernel_main() -> ! {
                 puts("mkdir  - create directory\n");
                 puts("cd     - change directory\n");
                 puts("write  - write file\n");
+                puts("type   - show file content\n");
             }
             b"dir" => {
                 fs.list_dir(current_dir, |name| {
@@ -263,6 +264,33 @@ pub extern "C" fn kernel_main() -> ! {
                     puts("Write OK\n");
                 } else {
                     puts("Write failed\n");
+                }
+            }
+            b"type" => {
+                if arg.is_empty() {
+                    puts("Usage: type <filename>\n");
+                    continue;
+                }
+
+                let name = match to_83(arg) {
+                    Some(name) => name,
+                    None => {
+                        puts("Invalid filename\n");
+                        continue;
+                    }
+                };
+
+                let mut buf = [0u8; 4096];
+                match fs.read_bytes(current_dir, &name, &mut buf) {
+                    Some(size) => {
+                        for &c in &buf[..size] {
+                            putchar(c);
+                        }
+                        putchar(b'\n');
+                    }
+                    None => {
+                        puts("Read failed\n");
+                    }
                 }
             }
             _ => {
