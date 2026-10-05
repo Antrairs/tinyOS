@@ -87,7 +87,7 @@ pub extern "C" fn kernel_main() -> ! {
     puts("Root directory:\n");
 
     let dir_name = b"TEST       ";
-    if fs.mkdir_root(dir_name) {
+    if fs.mkdir(0, dir_name) {
         puts("mkdir TEST OK!\n");
     }
 
@@ -99,31 +99,30 @@ pub extern "C" fn kernel_main() -> ! {
         }
     };
 
-    let name = b"HELLO   TXT";
-    let expected = b"Hello from TEST!\n";
+    let sub_name = b"SUB        ";
 
-    if fs.create_file(dir, name) {
-        if !fs.write_bytes(dir, name, expected) {
-            puts("Write failed!\n");
-            halt();
-        }
-        puts("Create and write OK!\n");
+    if fs.mkdir(dir, sub_name) {
+        puts("mkdir SUB OK!\n");
     }
 
-    let mut actual = [0u8; 64];
-
-    match fs.read_bytes(dir, name, &mut actual) {
-        Some(size) if &actual[..size] == expected => {
-            puts("Subdirectory read PASS!\n");
-        }
-        _ => {
-            puts("Subdirectory read FAIL!\n");
+    let sub_dir = match fs.find_dir(dir, sub_name) {
+        Some(cluster) => cluster,
+        None => {
+            puts("Find SUB failed!\n");
             halt();
         }
-    }
+    };
 
-    puts("TEST directory: \n");
+    puts("List TEST dir:\n");
     fs.list_dir(dir, |name| {
+        for &c in name {
+            putchar(c);
+        }
+        putchar(b'\n');
+    });
+
+    puts("List sub dir:\n");
+    fs.list_dir(sub_dir, |name| {
         for &c in name {
             putchar(c);
         }

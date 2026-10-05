@@ -87,39 +87,39 @@ impl<'a> Fat12<'a> {
         }
     }
 
-    fn find_free_root_entry(&mut self) -> Option<(usize, usize)> {
-        let root = self.root_sector();
-
-        let root_sectors = (self.root_entry_count * 32 + SECTOR_SIZE - 1) / SECTOR_SIZE;
-
-        let mut buf = [0u8; SECTOR_SIZE];
-
-        for sector in 0..root_sectors {
-            let disk_sector = root + sector;
-            self.device.read_sector(disk_sector, &mut buf);
-            for i in 0..16 {
-                let offset = i * 32;
-
-                if buf[offset] == 0x00 || buf[offset] == 0xE5 {
-                    return Some((disk_sector, offset));
-                }
-            }
-        }
-        None
-    }
-
-    pub fn mkdir_root(&mut self, name: &[u8; 11]) -> bool {
+    pub fn mkdir(&mut self, parent_cluster: u16, name: &[u8; 11]) -> bool {
         if self.sectors_per_cluster != 1 {
             return false;
         }
 
         // 不允许重名
-        if self.find_file(0, name).is_some() {
+        if self.find_file(parent_cluster, name).is_some() {
             return false;
         }
 
         // 保证根目录有空位置
-        let (dir_sector, entry_offset) = match self.find_free_root_entry() {
+        let (start_sector, sector_count) = self.dir_sectors(parent_cluster);
+
+        let mut buf = [0u8; SECTOR_SIZE];
+        let mut free_entry = None;
+
+        for i in 0..sector_count {
+            let sector = start_sector + i;
+            self.device.read_sector(sector, &mut buf);
+
+            for j in 0..16 {
+                let offset = j * 32;
+                if buf[offset] == 0x00 || buf[offset] == 0xE5 {
+                    free_entry = Some((sector, offset));
+                    break;
+                }
+            }
+            if free_entry.is_some() {
+                break;
+            }
+        };
+
+        let (dir_sector, entry_offset) = match free_entry {
             Some(location) => location,
             None => return false,
         };
@@ -142,7 +142,7 @@ impl<'a> Fat12<'a> {
         let parent_offset = 32;
         buf[parent_offset..parent_offset + 11].copy_from_slice(b"..         ");
         buf[parent_offset + 11] = 0x10;
-        buf[parent_offset + 26..parent_offset + 28].copy_from_slice(&0u16.to_le_bytes());
+        buf[parent_offset + 26..parent_offset + 28].copy_from_slice(&parent_cluster.to_le_bytes());
 
         let sector = self.cluster_to_sector(cluster);
         self.device.write_sector(sector, &buf);
