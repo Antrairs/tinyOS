@@ -94,6 +94,9 @@ impl<'a> Fat12<'a> {
         boot[21] = 0xF0; // 介质描述符 media type
         boot[22..24].copy_from_slice(&9u16.to_le_bytes()); // 每FAT扇区数 sectors_per_fat
 
+        boot[38] = 0x29; // 扩展引导记录签名
+        boot[43..54].copy_from_slice(b"NO NAME    ");
+
         // 引导扇区签名
         boot[510] = 0x55;
         boot[511] = 0xAA;
