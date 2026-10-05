@@ -210,6 +210,10 @@ pub extern "C" fn kernel_main() -> ! {
                     }
                 }
 
+                if arg == b"." {
+                    continue;
+                }
+
                 // cd 普通目录
                 let name = match to_83(arg) {
                     Some(name) => name,
