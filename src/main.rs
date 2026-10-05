@@ -108,17 +108,36 @@ pub extern "C" fn kernel_main() -> ! {
     let mut fs = Fat12::new(&mut disk);
 
     let mut line = [0u8; 128];
+    let mut current_dir = 0;
 
-    puts("tinyOS> ");
+    loop {
+        puts("tinyOS> ");
 
-    let len = read_line(&mut line);
+        let len = read_line(&mut line);
+        let cmd = &line[..len];
 
-    puts("Typed: ");
+        if cmd.is_empty() {
+            continue;
+        }
 
-    for &c in &line[..len] {
-        putchar(c);
+        match cmd {
+            b"help" => {
+                puts("help   - show commands\n");
+                puts("dir    - list directory\n");
+            }
+            b"dir" => {
+                fs.list_dir(current_dir, |name| {
+                    for &c in name {
+                        putchar(c);
+                    }
+                    putchar(b'\n');
+                });
+            }
+            _ => {
+                puts("Unknown command\n");
+            }
+        }
     }
-    putchar(b'\n');
 
     halt();
 }
