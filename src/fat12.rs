@@ -81,18 +81,26 @@ impl<'a> Fat12<'a> {
     }
 
     pub fn format(&mut self) {
+        self.bytes_per_sector = SECTOR_SIZE;
+        self.sectors_per_cluster = 1;
+        self.reserved_sectors = 1;
+        self.fat_count = 2;
+        self.root_entry_count = 224;
+        self.sectors_per_fat = 9;
+        self.total_sectors = 2880;
+
         let zero = [0u8; SECTOR_SIZE];
         let mut boot = [0u8; SECTOR_SIZE];
 
         // Boot Sector + BPB
-        boot[11..13].copy_from_slice(&512u16.to_le_bytes()); // 每扇区字节数 bytes_per_sector
-        boot[13] = 1; // 每簇扇区数 sectors_per_cluster
-        boot[14..16].copy_from_slice(&1u16.to_le_bytes()); // 保留扇区数 reserved_sectors
-        boot[16] = 2; // FAT 副本数 fat_count
-        boot[17..19].copy_from_slice(&224u16.to_le_bytes()); // 根目录入口数 root_entry_count
-        boot[19..21].copy_from_slice(&2880u16.to_le_bytes()); // 总扇区数 total_sectors
+        boot[11..13].copy_from_slice(&(self.bytes_per_sector as u16).to_le_bytes()); // 每扇区字节数 bytes_per_sector
+        boot[13] = self.sectors_per_cluster as u8; // 每簇扇区数 sectors_per_cluster
+        boot[14..16].copy_from_slice(&(self.reserved_sectors as u16).to_le_bytes()); // 保留扇区数 reserved_sectors
+        boot[16] = self.fat_count as u8; // FAT 副本数 fat_count
+        boot[17..19].copy_from_slice(&(self.root_entry_count as u16).to_le_bytes()); // 根目录入口数 root_entry_count
+        boot[19..21].copy_from_slice(&(self.total_sectors as u16).to_le_bytes()); // 总扇区数 total_sectors
         boot[21] = 0xF0; // 介质描述符 media type
-        boot[22..24].copy_from_slice(&9u16.to_le_bytes()); // 每FAT扇区数 sectors_per_fat
+        boot[22..24].copy_from_slice(&(self.sectors_per_fat as u16).to_le_bytes()); // 每FAT扇区数 sectors_per_fat
 
         boot[38] = 0x29; // 扩展引导记录签名
         boot[43..54].copy_from_slice(b"NO NAME    ");
@@ -103,8 +111,8 @@ impl<'a> Fat12<'a> {
         self.device.write_sector(0, &boot);
 
         // 初始化 FAT 表
-        for i in 1..=18 {
-            self.device.write_sector(i, &zero);
+        for sector in self.reserved_sectors..self.root_sector() {
+            self.device.write_sector(sector, &zero);
         }
 
         // FAT12 前两个 cluster 是保留项
@@ -112,10 +120,13 @@ impl<'a> Fat12<'a> {
         fat[0] = 0xF0;
         fat[1] = 0xFF;
         fat[2] = 0xFF;
-        self.device.write_sector(1, &fat);
-        self.device.write_sector(10, &fat);
 
-        for sector in 19..33 {
+        for index in 0..self.fat_count {
+            let sector = self.reserved_sectors + index * self.sectors_per_fat;
+            self.device.write_sector(sector, &fat);
+        }
+
+        for sector in self.root_sector()..self.first_data_sector() {
             self.device.write_sector(sector, &zero);
         }
     }
