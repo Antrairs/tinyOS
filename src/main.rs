@@ -143,6 +143,7 @@ pub extern "C" fn kernel_main() -> ! {
                 puts("cd     - change directory\n");
                 puts("write  - write file\n");
                 puts("type   - show file content\n");
+                puts("format - format FAT12 disk\n");
             }
             b"dir" => {
                 fs.list_dir(current_dir, |name| {
@@ -292,6 +293,11 @@ pub extern "C" fn kernel_main() -> ! {
                         puts("Read failed\n");
                     }
                 }
+            }
+            b"format" => {
+                fs.format();
+                current_dir = 0;
+                puts("Format OK\n");
             }
             _ => {
                 puts("Unknown command\n");
