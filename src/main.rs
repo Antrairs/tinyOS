@@ -38,7 +38,6 @@ fn putchar(c: u8) {
 
     unsafe {
         while read_volatile((UART0 + LSR) as *const u8) & TX_EMPTY == 0 {}
-
         write_volatile(UART0 as *mut u8, c);
     }
 }
@@ -49,10 +48,47 @@ fn puts(s: &str) {
     }
 }
 
+fn getchar() -> u8 {
+    const LSR: usize = 5;
+    const RX_READY: u8 = 1;
+
+    unsafe {
+        while read_volatile((UART0 + LSR) as *const u8) & RX_READY == 0 {}
+        read_volatile(UART0 as *const u8)
+    }
+}
+
+fn read_line(buf: &mut [u8]) -> usize {
+    let mut len = 0;
+
+    loop {
+        let c = getchar();
+
+        match c {
+            b'\r' => {
+                putchar(b'\n');
+                return len;
+            }
+            127 => {
+                if len > 0 {
+                    len -= 1;
+                    puts("\x08 \x08"); // 光标左移 擦掉字符 再左移
+                }
+            }
+            _ => {
+                // 可显示字符范围
+                if c >= 32 && c <= 126 && len < buf.len() {
+                    buf[len] = c;
+                    len += 1;
+                    putchar(c);
+                }
+            }
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_main() -> ! {
-    puts("\nHello tinyOS!\n");
-
     let base = match virtio::find_block_device() {
         Some(base) => base,
         None => {
@@ -69,31 +105,20 @@ pub extern "C" fn kernel_main() -> ! {
         }
     };
 
-    puts("VirtIO block initialized!\n");
-
-    let mut sector0 = [0u8; SECTOR_SIZE];
-
-    disk.read_sector(0, &mut sector0);
-
-    if sector0[510] == 0x55 && sector0[511] == 0xAA {
-        puts("Sector 0 read OK!\n");
-    } else {
-        puts("Sector 0 read failed!\n");
-    }
-
     let mut fs = Fat12::new(&mut disk);
 
-    match to_83(b"hello.txt") {
-        Some(name) => {
-            for c in name {
-                putchar(c);
-            }
-            putchar(b'\n');
-        }
-        None => {
-            puts("Invalid\n");
-        }
+    let mut line = [0u8; 128];
+
+    puts("tinyOS> ");
+
+    let len = read_line(&mut line);
+
+    puts("Typed: ");
+
+    for &c in &line[..len] {
+        putchar(c);
     }
+    putchar(b'\n');
 
     halt();
 }
