@@ -334,6 +334,32 @@ impl<'a> Fat12<'a> {
         self.first_data_sector() + (cluster as usize - 2) * self.sectors_per_cluster
     }
 
+    fn free_chain(&mut self, first_cluster: u16) {
+        if first_cluster < 2 {
+            return;
+        }
+
+        let mut current = first_cluster;
+        let mut steps = 0usize;
+
+        loop {
+            steps += 1;
+
+            if steps > self.cluster_count() {
+                return;
+            }
+
+            let next = self.fat_entry(current as usize);
+            self.set_fat_entry(current as usize, 0x000);
+
+            if next >= 0x002 && next <= 0xFEF {
+                current = next;
+            } else {
+                break;
+            }
+        }
+    }
+
     pub fn write_bytes(&mut self, dir_cluster: u16, name: &[u8; 11], data: &[u8]) -> bool {
         let (dir_sector, entry_offset) = match self.find_file(dir_cluster, name) {
             Some(location) => location,
@@ -345,7 +371,20 @@ impl<'a> Fat12<'a> {
             return false;
         }
 
+        let mut buf = [0u8; SECTOR_SIZE];
+        self.device.read_sector(dir_sector, &mut buf);
+
+        let old_cluster = u16::from_le_bytes([buf[entry_offset + 26], buf[entry_offset + 27]]);
+
+
+        if old_cluster >= 2 {
+            self.free_chain(old_cluster);
+        }
+
         if data.is_empty() {
+            buf[entry_offset + 26..entry_offset + 28].copy_from_slice(&0u16.to_le_bytes());
+            buf[entry_offset + 28..entry_offset + 32].copy_from_slice(&0u32.to_le_bytes());
+            self.device.write_sector(dir_sector, &buf);
             return true;
         }
 
