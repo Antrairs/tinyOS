@@ -140,6 +140,7 @@ pub extern "C" fn kernel_main() -> ! {
                 puts("dir    - list directory\n");
                 puts("touch  - create file\n");
                 puts("mkdir  - create directory\n");
+                puts("cd     - change directory\n");
             }
             b"dir" => {
                 fs.list_dir(current_dir, |name| {
@@ -187,6 +188,43 @@ pub extern "C" fn kernel_main() -> ! {
                     puts("Directory created\n");
                 } else {
                     puts("Create failed\n");
+                }
+            }
+            b"cd" => {
+                if arg.is_empty() {
+                    puts("Usage: cd <dirname>\n");
+                    continue;
+                }
+
+                if arg == b".." {
+                    if current_dir != 0 {
+                        match fs.find_dir(current_dir, b"..         ") {
+                            Some(parent) => {
+                                current_dir = parent;
+                            }
+                            None => {
+                                puts("Parent directory not found\n");
+                            }
+                        }
+                        continue;
+                    }
+                }
+
+                // cd 普通目录
+                let name = match to_83(arg) {
+                    Some(name) => name,
+                    None => {
+                        puts("Invalid directory name\n");
+                        continue;
+                    }
+                };
+                match fs.find_dir(current_dir, &name) {
+                    Some(cluster) => {
+                        current_dir = cluster;
+                    }
+                    None => {
+                        puts("Directory not found\n");
+                    }
                 }
             }
             _ => {
