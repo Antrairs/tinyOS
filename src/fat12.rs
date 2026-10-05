@@ -42,6 +42,44 @@ impl<'a> Fat12<'a> {
         }
     }
 
+    pub fn format(&mut self) {
+        let zero = [0u8; SECTOR_SIZE];
+        let mut boot = [0u8; SECTOR_SIZE];
+
+        // Boot Sector + BPB
+        boot[11..13].copy_from_slice(&512u16.to_le_bytes()); // 每扇区字节数 bytes_per_sector
+        boot[13] = 1; // 每簇扇区数 sectors_per_cluster
+        boot[14..16].copy_from_slice(&1u16.to_le_bytes()); // 保留扇区数 reserved_sectors
+        boot[16] = 2; // FAT 副本数 fat_count
+        boot[17..19].copy_from_slice(&224u16.to_le_bytes()); // 根目录入口数 root_entry_count
+        boot[19..21].copy_from_slice(&2880u16.to_le_bytes()); // 总扇区数 total_sectors
+        boot[21] = 0xF0; // 介质描述符 media type
+        boot[22..24].copy_from_slice(&9u16.to_le_bytes()); // 每FAT扇区数 sectors_per_fat
+
+        // 引导扇区签名
+        boot[510] = 0x55;
+        boot[511] = 0xAA;
+        self.device.write_sector(0, &boot);
+
+        // 初始化 FAT 表
+        for i in 1..=18 {
+            self.device.write_sector(i, &zero);
+        }
+
+        // FAT12 前两个 cluster 是保留项
+        let mut fat = [0u8; SECTOR_SIZE];
+        fat[0] = 0xF0;
+        fat[1] = 0xFF;
+        fat[2] = 0xFF;
+        self.device.write_sector(1, &fat);
+        self.device.write_sector(10, &fat);
+
+        for sector in 19..33 {
+            self.device.write_sector(sector, &zero);
+        }
+
+    }
+
     fn root_sector(&self) -> usize {
         self.reserved_sectors + self.fat_count * self.sectors_per_fat
     }

@@ -83,51 +83,8 @@ pub extern "C" fn kernel_main() -> ! {
 
     let mut fs = Fat12::new(&mut disk);
 
-    puts("FAT12 mounted!\n");
-    puts("Root directory:\n");
-
-    let dir_name = b"TEST       ";
-    if fs.mkdir(0, dir_name) {
-        puts("mkdir TEST OK!\n");
-    }
-
-    let dir = match fs.find_dir(0, dir_name) {
-        Some(cluster) => cluster,
-        None => {
-            puts("Find TEST failed!\n");
-            halt();
-        }
-    };
-
-    let sub_name = b"SUB        ";
-
-    if fs.mkdir(dir, sub_name) {
-        puts("mkdir SUB OK!\n");
-    }
-
-    let sub_dir = match fs.find_dir(dir, sub_name) {
-        Some(cluster) => cluster,
-        None => {
-            puts("Find SUB failed!\n");
-            halt();
-        }
-    };
-
-    puts("List TEST dir:\n");
-    fs.list_dir(dir, |name| {
-        for &c in name {
-            putchar(c);
-        }
-        putchar(b'\n');
-    });
-
-    puts("List sub dir:\n");
-    fs.list_dir(sub_dir, |name| {
-        for &c in name {
-            putchar(c);
-        }
-        putchar(b'\n');
-    });
+    fs.format();
+    puts("Format OK!\n");
 
     halt();
 }
