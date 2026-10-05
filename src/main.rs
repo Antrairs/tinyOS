@@ -6,7 +6,7 @@ use core::panic::PanicInfo;
 use core::ptr::{read_volatile, write_volatile};
 
 mod fat12;
-use fat12::Fat12;
+use fat12::{Fat12, to_83};
 
 mod block;
 use block::{BlockDevice, SECTOR_SIZE};
@@ -83,8 +83,17 @@ pub extern "C" fn kernel_main() -> ! {
 
     let mut fs = Fat12::new(&mut disk);
 
-    fs.format();
-    puts("Format OK!\n");
+    match to_83(b"hello.txt") {
+        Some(name) => {
+            for c in name {
+                putchar(c);
+            }
+            putchar(b'\n');
+        }
+        None => {
+            puts("Invalid\n");
+        }
+    }
 
     halt();
 }

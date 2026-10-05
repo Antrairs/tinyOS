@@ -4,6 +4,44 @@ fn le16(data: &[u8], pos: usize) -> usize {
     u16::from_le_bytes([data[pos], data[pos + 1]]) as usize
 }
 
+pub fn to_83(input: &[u8]) -> Option<[u8; 11]> {
+    let mut name = [b' '; 11];
+
+    let mut base_len = 0usize;
+    let mut ext_len = 0usize;
+    let mut in_ext = false;
+
+    for &c in input {
+        if c == b'.' {
+            if in_ext {
+                return None;
+            }
+            in_ext = true;
+            continue;
+        }
+        let c = if c >= b'a' && c <= b'z' { c - 32 } else { c };
+        if !in_ext {
+            if base_len >= 8 {
+                return None;
+            }
+            name[base_len] = c;
+            base_len += 1;
+        } else {
+            if ext_len >= 3 {
+                return None;
+            }
+            name[8 + ext_len] = c;
+            ext_len += 1;
+        }
+    }
+
+    if base_len == 0 {
+        return None;
+    }
+
+    Some(name)
+}
+
 pub struct Fat12<'a> {
     device: &'a mut dyn BlockDevice,
 
@@ -77,7 +115,6 @@ impl<'a> Fat12<'a> {
         for sector in 19..33 {
             self.device.write_sector(sector, &zero);
         }
-
     }
 
     fn root_sector(&self) -> usize {
@@ -155,7 +192,7 @@ impl<'a> Fat12<'a> {
             if free_entry.is_some() {
                 break;
             }
-        };
+        }
 
         let (dir_sector, entry_offset) = match free_entry {
             Some(location) => location,
@@ -413,7 +450,6 @@ impl<'a> Fat12<'a> {
         self.device.read_sector(dir_sector, &mut buf);
 
         let old_cluster = u16::from_le_bytes([buf[entry_offset + 26], buf[entry_offset + 27]]);
-
 
         if old_cluster >= 2 {
             self.free_chain(old_cluster);
