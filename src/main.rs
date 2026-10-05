@@ -114,16 +114,33 @@ pub extern "C" fn kernel_main() -> ! {
         puts("tinyOS> ");
 
         let len = read_line(&mut line);
-        let cmd = &line[..len];
+        let input = &line[..len];
 
-        if cmd.is_empty() {
+        if input.is_empty() {
             continue;
         }
+
+        let space = input.iter().position(|&c| c == b' ');
+
+        let (cmd, arg) = match space {
+            Some(pos) => {
+                let mut arg_start = pos + 1;
+
+                while arg_start < input.len() && input[arg_start] == b' ' {
+                    arg_start += 1;
+                }
+                ( &input[..pos], &input[arg_start..] )
+            }
+            None => {
+                (input, &[][..])
+            }
+        };
 
         match cmd {
             b"help" => {
                 puts("help   - show commands\n");
                 puts("dir    - list directory\n");
+                puts("touch  - create file\n");
             }
             b"dir" => {
                 fs.list_dir(current_dir, |name| {
@@ -132,6 +149,27 @@ pub extern "C" fn kernel_main() -> ! {
                     }
                     putchar(b'\n');
                 });
+            }
+            b"touch" => {
+                if arg.is_empty() {
+                    puts("Usage: touch <filename>\n");
+                    continue;
+                }
+
+                let name = match to_83(arg) {
+                    Some(name) => name,
+                    None => {
+                        puts("Invalid filename\n");
+                        continue;
+                    }
+                };
+
+                if fs.create_file(current_dir, &name) {
+                    puts("File created\n");
+                } else {
+                    puts("Create failed\n");
+                }
+
             }
             _ => {
                 puts("Unknown command\n");
