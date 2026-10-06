@@ -463,6 +463,10 @@ impl<'a> Fat12<'a> {
         let mut buf = [0u8; SECTOR_SIZE];
         self.device.read_sector(dir_sector, &mut buf);
 
+        if buf[entry_offset + 11] & 0x10 != 0 {
+            return false; // 不能写入目录项
+        }
+
         let old_cluster = u16::from_le_bytes([buf[entry_offset + 26], buf[entry_offset + 27]]);
 
         if old_cluster >= 2 {
