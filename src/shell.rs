@@ -163,8 +163,8 @@ pub fn run(fs: &mut Fat12<'_>) {
                                 puts("Parent directory not found\n");
                             }
                         }
-                        continue;
                     }
+                    continue;
                 }
 
                 if arg == b"." {
