@@ -300,7 +300,10 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
     }
     puts("┤\n");
 
-    centered_row("Up/Down Select   Enter/Right Open   Left Back   R Refresh   Q Quit", width);
+    centered_row(
+        "Up/Down Select   Enter/Right Open   Left Back   Q Quit",
+        width,
+    );
 
     puts("╰");
     for _ in 0..width.saturating_sub(2) {
@@ -309,7 +312,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
     puts("╯");
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct TermSize {
     rows: usize,
     cols: usize,
@@ -420,7 +423,24 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
 
         draw_browser(&entries[..count], selected, scroll, size);
 
-        match read_key() {
+        let key = read_key();
+        let new_size = terminal_size();
+
+        if new_size != size {
+            size = new_size;
+            visible = size.rows.saturating_sub(8).max(1);
+
+            // 调整滚动位置，确保选中项仍在显示范围内
+            if selected < scroll {
+                scroll = selected;
+            } else if selected >= scroll + visible {
+                scroll = selected + 1 - visible;
+            }
+
+            puts("\x1b[H\x1b[2J");
+        }
+
+        match key {
             Key::Up => {
                 if selected > 0 {
                     selected -= 1;
@@ -461,18 +481,6 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
                         selected = 0;
                         scroll = 0;
                     }
-                }
-            }
-
-            Key::Char(b'r') | Key::Char(b'R') => {
-                size = terminal_size();
-                visible = size.rows.saturating_sub(8).max(1);
-                puts("\x1b[H\x1b[2J");
-
-                if selected < scroll {
-                    scroll = selected;
-                } else if selected >= scroll + visible {
-                    scroll = selected + 1 - visible;
                 }
             }
 
