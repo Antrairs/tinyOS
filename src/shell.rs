@@ -196,7 +196,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
 
     let visible = size.rows.saturating_sub(8);
     let width = size.cols.saturating_sub(1);
-    puts("\x1b[H\x1b[2J");
+    puts("\x1b[H");
 
     puts(CYAN);
     puts(BOLD);
@@ -466,8 +466,8 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
 
             Key::Char(b'r') | Key::Char(b'R') => {
                 size = terminal_size();
-
                 visible = size.rows.saturating_sub(8).max(1);
+                puts("\x1b[H\x1b[2J");
 
                 if selected < scroll {
                     scroll = selected;
