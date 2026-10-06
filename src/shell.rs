@@ -161,6 +161,24 @@ fn print_name(name: &[u8; 11]) {
     }
 }
 
+fn centered_row(text: &str, width: usize) {
+    let inner = width.saturating_sub(2);
+    let left = inner.saturating_sub(text.len()) / 2;
+    let right = inner.saturating_sub(text.len() + left);
+
+    puts("│");
+    for _ in 0..left {
+        putchar(b' ');
+    }
+
+    puts(text);
+
+    for _ in 0..right {
+        putchar(b' ');
+    }
+    puts("│\n");
+}
+
 fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: TermSize) {
     if size.cols < 40 || size.rows < 10 {
         puts("\x1b[H\x1b[2J");
@@ -188,16 +206,10 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
     }
     puts("╮\n");
 
-    let title = "  TinyOS File Browser";
-    puts("│");
+    centered_row("TinyOS File Browser", width);
     puts(BOLD);
-    puts(title);
     puts(RESET);
     puts(CYAN);
-    for _ in title.len()..width.saturating_sub(2) {
-        putchar(b' ');
-    }
-    puts("│\n");
 
     puts("├");
     for _ in 0..width.saturating_sub(2) {
@@ -288,15 +300,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
     }
     puts("┤\n");
 
-    let hint = "Up/Down Select   Enter/Right Open   Left Back   R Refresh   Q Quit";
-    puts("│ ");
-    puts(hint);
-
-    let used = 2 + hint.len();
-    for _ in used..width.saturating_sub(1) {
-        putchar(b' ');
-    }
-    puts("│\n");
+    centered_row("Up/Down Select   Enter/Right Open   Left Back   R Refresh   Q Quit", width);
 
     puts("╰");
     for _ in 0..width.saturating_sub(2) {
