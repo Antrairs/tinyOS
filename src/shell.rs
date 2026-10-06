@@ -388,8 +388,15 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
         row_start();
 
         if index >= entries.len() {
-            // 即使没有文件这一行也要画左右边框
-            for _ in 0..width.saturating_sub(4) {
+            let message = if entries.is_empty() && row == 0 {
+                "(Empty directory)"
+            } else {
+                ""
+            };
+
+            puts(message);
+
+            for _ in message.len()..width.saturating_sub(4) {
                 putchar(b' ');
             }
             row_end();
