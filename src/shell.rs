@@ -1,4 +1,7 @@
-use core::ptr::{read_volatile, write_volatile};
+use core::{
+    default,
+    ptr::{read_volatile, write_volatile},
+};
 
 use crate::fat12::{Fat12, to_83};
 
@@ -7,6 +10,7 @@ const CYAN: &str = "\x1b[36m";
 const BLUE: &str = "\x1b[34m";
 const GREEN: &str = "\x1b[32m";
 const BOLD: &str = "\x1b[1m";
+const YELLOW: &str = "\x1b[33m";
 const REVERSE: &str = "\x1b[7m";
 
 enum Key {
@@ -43,6 +47,19 @@ fn getchar() -> u8 {
     unsafe {
         while read_volatile((UART0 + LSR) as *const u8) & RX_READY == 0 {}
         read_volatile(UART0 as *const u8)
+    }
+}
+
+fn try_getchar() -> Option<u8> {
+    const LSR: usize = 5;
+    const RX_READY: u8 = 1;
+
+    unsafe {
+        if read_volatile((UART0 + LSR) as *const u8) & RX_READY == 0 {
+            None
+        } else {
+            Some(read_volatile(UART0 as *const u8))
+        }
     }
 }
 
@@ -144,26 +161,78 @@ fn print_name(name: &[u8; 11]) {
     }
 }
 
-fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize) {
+fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: TermSize) {
+    if size.cols < 40 || size.rows < 10 {
+        puts("\x1b[H\x1b[2J");
+
+        puts(YELLOW);
+        puts("TinyOS File Browser\n\n");
+        puts(RESET);
+
+        puts("Terminal too small.\n");
+        puts("Resize to at least 40x10.\n");
+        puts("\nPress q to quit, r to refresh.\n");
+
+        return;
+    }
+
+    let visible = size.rows.saturating_sub(8);
+    let width = size.cols.saturating_sub(1);
     puts("\x1b[H\x1b[2J");
 
     puts(CYAN);
     puts(BOLD);
-    puts("╭────────────────────────────────────────────────────────────╮\n");
-    puts("│                   TinyOS File Browser                      │\n");
-    puts("╰────────────────────────────────────────────────────────────╯\n");
+    puts("╭");
+    for _ in 0..width.saturating_sub(2) {
+        puts("─");
+    }
+    puts("╮\n");
+
+    let title = "  TinyOS File Browser";
+    puts("│");
+    puts(BOLD);
+    puts(title);
+    puts(RESET);
+    puts(CYAN);
+    for _ in title.len()..width.saturating_sub(2) {
+        putchar(b' ');
+    }
+    puts("│\n");
+
+    puts("├");
+    for _ in 0..width.saturating_sub(2) {
+        puts("─");
+    }
+    puts("┤\n");
+
     puts(RESET);
 
-    puts("  TYPE    NAME\n");
-    puts(" ────────────────────────────────────────────────────────────\n");
+    let header = "  TYPE    NAME";
+    puts("│");
+    puts(header);
+    for _ in header.len()..width.saturating_sub(2) {
+        putchar(b' ');
+    }
+    puts("│\n");
 
-    const VISIBLE: usize = 14;
+    puts("├");
+    for _ in 0..width.saturating_sub(2) {
+        puts("─");
+    }
+    puts("┤\n");
 
-    for row in 0..VISIBLE {
+    for row in 0..visible {
         let index = scroll + row;
 
+        puts(RESET);
+        puts("│");
+
         if index >= entries.len() {
-            putchar(b'\n');
+            // 即使没有文件，这一行也要画左右边框。
+            for _ in 0..width.saturating_sub(2) {
+                putchar(b' ');
+            }
+            puts("│\n");
             continue;
         }
 
@@ -175,7 +244,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize) {
 
         if entry.attr & 0x10 != 0 {
             puts(BLUE);
-            puts("> [DIR ]  ");
+            puts("> [ DIR]  ");
         } else {
             puts(GREEN);
             puts("  [FILE]  ");
@@ -183,17 +252,127 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize) {
 
         print_name(&entry.name);
 
+        // 计算实际显示的文件名长度，排除补齐空格。
+        let mut base_end = 8;
+        while base_end > 0 && entry.name[base_end - 1] == b' ' {
+            base_end -= 1;
+        }
+
+        let mut ext_end = 11;
+        while ext_end > 8 && entry.name[ext_end - 1] == b' ' {
+            ext_end -= 1;
+        }
+
+        let name_len = base_end
+            + if ext_end > 8 {
+                1 + ext_end - 8 // 点号 + 扩展名
+            } else {
+                0
+            };
+
+        // 类型前缀占 10 列，再加文件名长度。
+        let used = 10 + name_len;
+
+        for _ in used..width.saturating_sub(2) {
+            putchar(b' ');
+        }
+
+        // 先关闭选中高亮，避免边框也被反色。
         puts(RESET);
-        putchar(b'\n');
+        puts("│\n");
     }
 
-    puts(" ────────────────────────────────────────────────────────────\n");
-    puts("  Up/Down Select   Enter/Right Open   Left Back   Q Quit\n");
+    puts("├");
+    for _ in 0..width.saturating_sub(2) {
+        puts("─");
+    }
+    puts("┤\n");
+
+    let hint = "Up/Down Select   Enter/Right Open   Left Back   R Refresh   Q Quit";
+    puts("│ ");
+    puts(hint);
+
+    let used = 2 + hint.len();
+    for _ in used..width.saturating_sub(1) {
+        putchar(b' ');
+    }
+    puts("│\n");
+
+    puts("╰");
+    for _ in 0..width.saturating_sub(2) {
+        puts("─");
+    }
+    puts("╯");
+}
+
+#[derive(Clone, Copy)]
+struct TermSize {
+    rows: usize,
+    cols: usize,
+}
+
+fn terminal_size() -> TermSize {
+    let default = TermSize { rows: 24, cols: 80 };
+
+    puts("\x1b[18t");
+
+    let mut buf = [0u8; 32];
+    let mut len = 0usize;
+
+    for _ in 0..1_000_000 {
+        if let Some(c) = try_getchar() {
+            if len < buf.len() {
+                buf[len] = c;
+                len += 1;
+            }
+            if c == b't' {
+                break;
+            }
+        }
+    }
+
+    if len < 7
+        || buf[0] != 27
+        || buf[1] != b'['
+        || buf[2] != b'8'
+        || buf[3] != b';'
+        || buf[len - 1] != b't'
+    {
+        return default;
+    }
+
+    let mut i = 4;
+    let mut rows = 0usize;
+
+    while i < len && buf[i].is_ascii_digit() {
+        rows = rows * 10 + (buf[i] - b'0') as usize;
+        i += 1;
+    }
+
+    if i >= len || buf[i] != b';' {
+        return default;
+    }
+
+    i += 1;
+
+    let mut cols = 0usize;
+
+    while i < len && buf[i].is_ascii_digit() {
+        cols = cols * 10 + (buf[i] - b'0') as usize;
+        i += 1;
+    }
+
+    if rows < 5 || cols < 20 {
+        return default;
+    }
+
+    TermSize { rows, cols }
 }
 
 fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
+    let mut size = terminal_size();
     const MAX_ENTRIES: usize = 224;
-    const VISIBLE: usize = 14;
+    let mut visible = size.rows.saturating_sub(8).max(1);
 
     let empty = BrowserEntry {
         name: [b' '; 11],
@@ -235,7 +414,7 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
             selected = count - 1;
         }
 
-        draw_browser(&entries[..count], selected, scroll);
+        draw_browser(&entries[..count], selected, scroll, size);
 
         match read_key() {
             Key::Up => {
@@ -252,8 +431,8 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
                 if selected + 1 < count {
                     selected += 1;
 
-                    if selected >= scroll + VISIBLE {
-                        scroll = selected + 1 - VISIBLE;
+                    if selected >= scroll + visible {
+                        scroll = selected + 1 - visible;
                     }
                 }
             }
@@ -278,6 +457,18 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
                         selected = 0;
                         scroll = 0;
                     }
+                }
+            }
+
+            Key::Char(b'r') | Key::Char(b'R') => {
+                size = terminal_size();
+
+                visible = size.rows.saturating_sub(8).max(1);
+
+                if selected < scroll {
+                    scroll = selected;
+                } else if selected >= scroll + visible {
+                    scroll = selected + 1 - visible;
                 }
             }
 
