@@ -1,5 +1,4 @@
 use core::{
-    default,
     ptr::{read_volatile, write_volatile},
 };
 
@@ -161,6 +160,27 @@ fn print_name(name: &[u8; 11]) {
     }
 }
 
+fn print_number(mut value: u32) -> usize {
+    let mut digits = [0u8; 10];
+    let mut start = digits.len();
+
+    loop {
+        start -= 1;
+        digits[start] = b'0' + (value % 10) as u8;
+        value /= 10;
+
+        if value == 0 {
+            break;
+        }
+    }
+
+    for &digit in &digits[start..] {
+        putchar(digit);
+    }
+
+    digits.len() - start
+}
+
 fn centered_row(text: &str, width: usize) {
     let inner = width.saturating_sub(2);
     let left = inner.saturating_sub(text.len()) / 2;
@@ -219,7 +239,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
 
     puts(RESET);
 
-    let header = "  TYPE    NAME";
+    let header = "  TYPE    NAME          SIZE";
     puts("│");
     puts(header);
     for _ in header.len()..width.saturating_sub(2) {
@@ -240,7 +260,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
         puts("│");
 
         if index >= entries.len() {
-            // 即使没有文件，这一行也要画左右边框。
+            // 即使没有文件这一行也要画左右边框
             for _ in 0..width.saturating_sub(2) {
                 putchar(b' ');
             }
@@ -264,7 +284,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
 
         print_name(&entry.name);
 
-        // 计算实际显示的文件名长度，排除补齐空格。
+        // 计算实际显示的文件名长度 排除补齐空格
         let mut base_end = 8;
         while base_end > 0 && entry.name[base_end - 1] == b' ' {
             base_end -= 1;
@@ -282,14 +302,28 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
                 0
             };
 
-        // 类型前缀占 10 列，再加文件名长度。
-        let used = 10 + name_len;
+        // 文件名补齐到 14 列 让 SIZE 始终从同一列开始
+        for _ in name_len..14 {
+            putchar(b' ');
+        }
+
+        let size_len = if entry.attr & 0x10 != 0 {
+            // 目录不显示文件大小
+            putchar(b'-');
+            1
+        } else {
+            let digits = print_number(entry.size);
+            puts(" B");
+            digits + 2
+        };
+
+        // 类型区 10 列 名称区 14 列 再加大小文字
+        let used = 10 + 14 + size_len;
 
         for _ in used..width.saturating_sub(2) {
             putchar(b' ');
         }
-
-        // 先关闭选中高亮，避免边框也被反色。
+        // 先关闭选中高亮 避免边框也被反色
         puts(RESET);
         puts("│\n");
     }
@@ -430,7 +464,7 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
             size = new_size;
             visible = size.rows.saturating_sub(8).max(1);
 
-            // 调整滚动位置，确保选中项仍在显示范围内
+            // 调整滚动位置 确保选中项仍在显示范围内
             if selected < scroll {
                 scroll = selected;
             } else if selected >= scroll + visible {
