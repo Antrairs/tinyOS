@@ -1,6 +1,4 @@
-use core::{
-    ptr::{read_volatile, write_volatile},
-};
+use core::ptr::{read_volatile, write_volatile};
 
 use crate::fat12::{Fat12, to_83};
 
@@ -181,22 +179,161 @@ fn print_number(mut value: u32) -> usize {
     digits.len() - start
 }
 
-fn centered_row(text: &str, width: usize) {
-    let inner = width.saturating_sub(2);
+fn centered_row(text: &str, width: usize, title: bool) {
+    let inner = width.saturating_sub(4);
     let left = inner.saturating_sub(text.len()) / 2;
     let right = inner.saturating_sub(text.len() + left);
 
-    puts("│");
+    row_start();
+
     for _ in 0..left {
         putchar(b' ');
     }
 
+    if title {
+        puts(CYAN);
+        puts(BOLD);
+    }
+
     puts(text);
+    puts(RESET);
 
     for _ in 0..right {
         putchar(b' ');
     }
-    puts("│\n");
+
+    row_end();
+}
+
+fn border_line(left: &str, right: &str, width: usize) {
+    puts(RESET);
+    puts(CYAN);
+
+    puts(left);
+    for _ in 0..width.saturating_sub(2) {
+        puts("─");
+    }
+    puts(right);
+
+    puts(RESET);
+}
+
+fn row_start() {
+    puts(RESET);
+    puts(CYAN);
+    puts("│ ");
+    puts(RESET);
+}
+
+fn row_end() {
+    puts(RESET);
+    puts(CYAN);
+    puts(" │");
+    puts(RESET);
+    puts("\n");
+}
+
+fn draw_file(entry: &BrowserEntry, data: Option<&[u8]>, size: TermSize) {
+    puts(RESET);
+    puts("\x1b[H\x1b[2J");
+
+    if size.cols < 40 || size.rows < 10 {
+        puts("Terminal too small. Left / q: back");
+        return;
+    }
+
+    let width = size.cols - 1;
+    let inner = width - 4;
+    let content_rows = size.rows - 8;
+
+    puts(CYAN);
+    border_line("╭", "╮", width);
+    puts("\n");
+    centered_row("TinyOS File Viewer", width, true);
+    border_line("├", "┤", width);
+    puts("\r\n");
+
+    row_start();
+    puts("File: ");
+    print_name(&entry.name);
+
+    let mut base_end = 8;
+    while base_end > 0 && entry.name[base_end - 1] == b' ' {
+        base_end -= 1;
+    }
+
+    let mut ext_end = 11;
+    while ext_end > 8 && entry.name[ext_end - 1] == b' ' {
+        ext_end -= 1;
+    }
+
+    let name_len = base_end + if ext_end > 8 { 1 + ext_end - 8 } else { 0 };
+
+    for _ in "File: ".len() + name_len..inner {
+        putchar(b' ');
+    }
+    row_end();
+
+    border_line("├", "┤", width);
+    puts("\n");
+    puts(RESET);
+
+    let message = b"Read failed, or file exceeds 4096 bytes.";
+    let bytes = match data {
+        Some(bytes) if bytes.is_empty() => &b"(Empty file)"[..],
+        Some(bytes) => bytes,
+        None => &message[..],
+    };
+
+    let mut pos = 0;
+
+    for _ in 0..content_rows {
+        row_start();
+        let mut col = 0;
+
+        while pos < bytes.len() && col < inner {
+            let c = bytes[pos];
+            pos += 1;
+
+            if c == b'\r' {
+                continue;
+            }
+            if c == b'\n' {
+                break;
+            }
+
+            putchar(if c >= 32 && c <= 126 { c } else { b'?' });
+            col += 1;
+        }
+
+        if col == inner {
+            if pos < bytes.len() && bytes[pos] == b'\r' {
+                pos += 1;
+            }
+            if pos < bytes.len() && bytes[pos] == b'\n' {
+                pos += 1;
+            }
+        }
+
+        for _ in col..inner {
+            putchar(b' ');
+        }
+        row_end();
+    }
+
+    puts(CYAN);
+    border_line("├", "┤", width);
+    puts("\n");
+
+    let hint = if pos < bytes.len() {
+        "Left/q: back | More content omitted"
+    } else {
+        "Left / q: return to browser"
+    };
+    centered_row(hint, width, false);
+
+    border_line("╰", "╯", width);
+    puts(RESET);
 }
 
 fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: TermSize) {
@@ -204,7 +341,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
         puts("\x1b[H\x1b[2J");
 
         puts(YELLOW);
-        puts("TinyOS File Browser\n\n");
+        puts("TinyOS File Browser\n");
         puts(RESET);
 
         puts("Terminal too small.\n");
@@ -220,51 +357,42 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
 
     puts(CYAN);
     puts(BOLD);
-    puts("╭");
-    for _ in 0..width.saturating_sub(2) {
-        puts("─");
-    }
-    puts("╮\n");
+    border_line("╭", "╮", width);
+    puts("\n");
 
-    centered_row("TinyOS File Browser", width);
+    centered_row("TinyOS File Browser", width, true);
     puts(BOLD);
     puts(RESET);
     puts(CYAN);
 
-    puts("├");
-    for _ in 0..width.saturating_sub(2) {
-        puts("─");
-    }
-    puts("┤\n");
+    border_line("├", "┤", width);
+    puts("\n");
 
     puts(RESET);
 
     let header = "  TYPE    NAME          SIZE";
-    puts("│");
+    row_start();
     puts(header);
-    for _ in header.len()..width.saturating_sub(2) {
+    for _ in header.len()..width.saturating_sub(4) {
         putchar(b' ');
     }
-    puts("│\n");
+    row_end();
 
-    puts("├");
-    for _ in 0..width.saturating_sub(2) {
-        puts("─");
-    }
-    puts("┤\n");
+    border_line("├", "┤", width);
+    puts("\n");
 
     for row in 0..visible {
         let index = scroll + row;
 
         puts(RESET);
-        puts("│");
+        row_start();
 
         if index >= entries.len() {
             // 即使没有文件这一行也要画左右边框
-            for _ in 0..width.saturating_sub(2) {
+            for _ in 0..width.saturating_sub(4) {
                 putchar(b' ');
             }
-            puts("│\n");
+            row_end();
             continue;
         }
 
@@ -320,30 +448,24 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
         // 类型区 10 列 名称区 14 列 再加大小文字
         let used = 10 + 14 + size_len;
 
-        for _ in used..width.saturating_sub(2) {
+        for _ in used..width.saturating_sub(4) {
             putchar(b' ');
         }
         // 先关闭选中高亮 避免边框也被反色
         puts(RESET);
-        puts("│\n");
+        row_end();
     }
 
-    puts("├");
-    for _ in 0..width.saturating_sub(2) {
-        puts("─");
-    }
-    puts("┤\n");
+    border_line("├", "┤", width);
+    puts("\n");
 
     centered_row(
         "Up/Down Select   Enter/Right Open   Left Back   Q Quit",
         width,
+        false,
     );
 
-    puts("╰");
-    for _ in 0..width.saturating_sub(2) {
-        puts("─");
-    }
-    puts("╯");
+    border_line("╰", "╯", width);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -408,6 +530,28 @@ fn terminal_size() -> TermSize {
     }
 
     TermSize { rows, cols }
+}
+
+fn view_file(fs: &mut Fat12<'_>, current_dir: u16, entry: &BrowserEntry, size: TermSize) {
+    let mut buf = [0u8; 4096];
+    let len = fs.read_bytes(current_dir, &entry.name, &mut buf);
+
+    let data = match len {
+        Some(len) => Some(&buf[..len]),
+        None => None,
+    };
+
+    draw_file(entry, data, size);
+
+    loop {
+        match read_key() {
+            Key::Left | Key::Char(b'q') | Key::Char(b'Q') => break,
+            _ => {}
+        }
+    }
+
+    puts(RESET);
+    puts("\x1b[H\x1b[2J");
 }
 
 fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
@@ -504,6 +648,8 @@ fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
 
                         selected = 0;
                         scroll = 0;
+                    } else if entry.attr & 0x08 == 0 {
+                        view_file(fs, current_dir, &entry, size);
                     }
                 }
             }
