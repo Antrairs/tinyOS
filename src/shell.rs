@@ -242,7 +242,7 @@ fn draw_file(entry: &BrowserEntry, data: Option<&[u8]>, size: TermSize) {
         return;
     }
 
-    let width = size.cols - 1;
+    let width = size.cols;
     let inner = width - 4;
     let content_rows = size.rows - 8;
 
@@ -352,7 +352,7 @@ fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize, size: 
     }
 
     let visible = size.rows.saturating_sub(8);
-    let width = size.cols.saturating_sub(1);
+    let width = size.cols;
     puts("\x1b[H");
 
     puts(CYAN);
