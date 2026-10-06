@@ -150,7 +150,7 @@ impl<'a> Fat12<'a> {
 
     pub fn list_dir<F>(&mut self, dir_cluster: u16, mut f: F)
     where
-        F: FnMut(&[u8]),
+        F: FnMut(&[u8], u8, u16, u32),
     {
         let (start_sector, sector_count) = self.dir_sectors(dir_cluster);
 
@@ -171,7 +171,11 @@ impl<'a> Fat12<'a> {
                     continue;
                 }
 
-                f(&entry[0..11]);
+                let attr = entry[11];
+                let cluster = u16::from_le_bytes([entry[26], entry[27]]);
+                let size = u32::from_le_bytes([entry[28], entry[29], entry[30], entry[31]]);
+
+                f(&entry[0..11], attr, cluster, size);
             }
         }
     }

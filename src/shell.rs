@@ -2,6 +2,22 @@ use core::ptr::{read_volatile, write_volatile};
 
 use crate::fat12::{Fat12, to_83};
 
+const RESET: &str = "\x1b[0m";
+const CYAN: &str = "\x1b[36m";
+const BLUE: &str = "\x1b[34m";
+const GREEN: &str = "\x1b[32m";
+const BOLD: &str = "\x1b[1m";
+const REVERSE: &str = "\x1b[7m";
+
+enum Key {
+    Char(u8),
+    Enter,
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 const UART0: usize = 0x1000_0000;
 
 fn putchar(c: u8) {
@@ -59,6 +75,221 @@ fn read_line(buf: &mut [u8]) -> usize {
     }
 }
 
+fn enter_fullscreen() {
+    puts("\x1b[?1049h"); // alternate screen
+    puts("\x1b[2J"); // 清屏
+    puts("\x1b[H"); // 左上角
+    puts("\x1b[?25l"); // 隐藏光标
+}
+
+fn leave_fullscreen() {
+    puts(RESET);
+    puts("\x1b[?25h"); // 恢复光标
+    puts("\x1b[?1049l"); // 回原来的 Shell
+}
+
+fn read_key() -> Key {
+    let c = getchar();
+    match c {
+        b'\r' => Key::Enter,
+        27 => {
+            let second = getchar();
+            if second == b'[' {
+                let third = getchar();
+                match third {
+                    b'A' => return Key::Up,
+                    b'B' => return Key::Down,
+                    b'C' => return Key::Right,
+                    b'D' => return Key::Left,
+                    _ => Key::Char(0),
+                }
+            } else {
+                Key::Char(0)
+            }
+        }
+        _ => Key::Char(c),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BrowserEntry {
+    name: [u8; 11],
+    attr: u8,
+    cluster: u16,
+    size: u32,
+}
+
+fn print_name(name: &[u8; 11]) {
+    let mut base_end = 8;
+
+    while base_end > 0 && name[base_end - 1] == b' ' {
+        base_end -= 1;
+    }
+
+    for &c in &name[..base_end] {
+        putchar(c);
+    }
+
+    let mut ext_end = 11;
+
+    while ext_end > 8 && name[ext_end - 1] == b' ' {
+        ext_end -= 1;
+    }
+
+    if ext_end > 8 {
+        putchar(b'.');
+        for &c in &name[8..ext_end] {
+            putchar(c);
+        }
+    }
+}
+
+fn draw_browser(entries: &[BrowserEntry], selected: usize, scroll: usize) {
+    puts("\x1b[H\x1b[2J");
+
+    puts(CYAN);
+    puts(BOLD);
+    puts("╭────────────────────────────────────────────────────────────╮\n");
+    puts("│                   TinyOS File Browser                      │\n");
+    puts("╰────────────────────────────────────────────────────────────╯\n");
+    puts(RESET);
+
+    puts("  TYPE    NAME\n");
+    puts(" ────────────────────────────────────────────────────────────\n");
+
+    const VISIBLE: usize = 14;
+
+    for row in 0..VISIBLE {
+        let index = scroll + row;
+
+        if index >= entries.len() {
+            putchar(b'\n');
+            continue;
+        }
+
+        let entry = &entries[index];
+
+        if index == selected {
+            puts(REVERSE);
+        }
+
+        if entry.attr & 0x10 != 0 {
+            puts(BLUE);
+            puts("> [DIR ]  ");
+        } else {
+            puts(GREEN);
+            puts("  [FILE]  ");
+        }
+
+        print_name(&entry.name);
+
+        puts(RESET);
+        putchar(b'\n');
+    }
+
+    puts(" ────────────────────────────────────────────────────────────\n");
+    puts("  Up/Down Select   Enter/Right Open   Left Back   Q Quit\n");
+}
+
+fn browser(fs: &mut Fat12<'_>, start_dir: u16) -> u16 {
+    const MAX_ENTRIES: usize = 224;
+    const VISIBLE: usize = 14;
+
+    let empty = BrowserEntry {
+        name: [b' '; 11],
+        attr: 0,
+        cluster: 0,
+        size: 0,
+    };
+
+    let mut current_dir = start_dir;
+    let mut selected = 0usize;
+    let mut scroll = 0usize;
+
+    enter_fullscreen();
+
+    loop {
+        let mut entries = [empty; MAX_ENTRIES];
+        let mut count = 0usize;
+
+        fs.list_dir(current_dir, |name, attr, cluster, size| {
+            // 不显示 "." 和 ".."
+            if name == b".          " || name == b"..         " {
+                return;
+            }
+
+            if count < MAX_ENTRIES {
+                entries[count].name.copy_from_slice(name);
+                entries[count].attr = attr;
+                entries[count].cluster = cluster;
+                entries[count].size = size;
+
+                count += 1;
+            }
+        });
+
+        if count == 0 {
+            selected = 0;
+            scroll = 0;
+        } else if selected >= count {
+            selected = count - 1;
+        }
+
+        draw_browser(&entries[..count], selected, scroll);
+
+        match read_key() {
+            Key::Up => {
+                if selected > 0 {
+                    selected -= 1;
+
+                    if selected < scroll {
+                        scroll = selected;
+                    }
+                }
+            }
+
+            Key::Down => {
+                if selected + 1 < count {
+                    selected += 1;
+
+                    if selected >= scroll + VISIBLE {
+                        scroll = selected + 1 - VISIBLE;
+                    }
+                }
+            }
+
+            Key::Enter | Key::Right => {
+                if count > 0 {
+                    let entry = entries[selected];
+
+                    if entry.attr & 0x10 != 0 {
+                        current_dir = entry.cluster;
+
+                        selected = 0;
+                        scroll = 0;
+                    }
+                }
+            }
+
+            Key::Left => {
+                if current_dir != 0 {
+                    if let Some(parent) = fs.find_dir(current_dir, b"..         ") {
+                        current_dir = parent;
+                        selected = 0;
+                        scroll = 0;
+                    }
+                }
+            }
+
+            Key::Char(b'q') | Key::Char(b'Q') => {
+                leave_fullscreen();
+                return current_dir;
+            }
+
+            _ => {}
+        }
+    }
+}
 
 pub fn run(fs: &mut Fat12<'_>) {
     let mut line = [0u8; 128];
@@ -91,6 +322,7 @@ pub fn run(fs: &mut Fat12<'_>) {
         match cmd {
             b"help" => {
                 puts("help   - show commands\n");
+                puts("browse - open file browser\n");
                 puts("dir    - list directory\n");
                 puts("touch  - create file\n");
                 puts("mkdir  - create directory\n");
@@ -99,8 +331,11 @@ pub fn run(fs: &mut Fat12<'_>) {
                 puts("type   - show file content\n");
                 puts("format - format FAT12 disk\n");
             }
+            b"browse" => {
+                current_dir = browser(fs, current_dir);
+            }
             b"dir" => {
-                fs.list_dir(current_dir, |name| {
+                fs.list_dir(current_dir, |name, _, _, _| {
                     for &c in name {
                         putchar(c);
                     }
